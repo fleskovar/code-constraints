@@ -1,0 +1,19 @@
+# Normalize to LF in the repository regardless of a contributor's core.autocrlf.
+* text=auto eol=lf
+
+# Scripts must stay LF even in a Windows working tree, or they fail on Linux
+# and in git-bash/WSL with "bad interpreter".
+*.sh        text eol=lf
+Makefile    text eol=lf
+
+# Windows-native scripts keep CRLF.
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary / generated — never touch, never diff.
+*.png       binary
+*.jpg       binary
+*.ico       binary
+*.svg       -text
+package-lock.json  -diff

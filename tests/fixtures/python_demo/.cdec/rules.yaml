@@ -1,0 +1,123 @@
+# Demo rule set — exercises every supported rule type against the
+# python_demo fixture. Each rule carries an explanatory `message:` that
+# tells the developer WHY the rule exists and HOW to fix the violation.
+# Messages support `{placeholders}` and YAML block scalars (`message: |`).
+
+rules:
+  # Diff-scope: would catch any new class added on a PR.
+  - id: no-new-classes
+    type: no-new-classes
+    severity: warning
+    scope: diff
+    ignore:
+      - "tests.**"
+    message: |
+      New class '{qualified_name}' was introduced.
+      The python_demo fixture is meant to stay small; new classes inflate
+      the test surface. If this addition is intentional, run
+      `cdec check --update-reference` to bump the baseline snapshot.
+
+  # Diff-scope: classes deleted on a PR are flagged.
+  - id: no-removed-classes
+    type: no-removed-classes
+    severity: warning
+    scope: diff
+    message: |
+      Class '{qualified_name}' was removed from the parsed source tree.
+      Other fixtures, tests, or examples may still reference it. If the
+      removal is deliberate, confirm with `cdec check --update-reference`.
+
+  # Snapshot: a class with no incoming references is suspicious.
+  - id: no-dangling-classes
+    type: dangling-classes
+    severity: warning
+    scope: snapshot
+    entry_points:
+      - "*.Dog"
+      - "*.Cart"
+      - "store.Cart"
+    message: |
+      Class '{qualified_name}' has no incoming references from any other
+      class in this project. If it's truly an entry point (wired by app
+      bootstrap code outside this fixture), add its qualified name to the
+      `entry_points:` list in this rule. Otherwise, delete it — dead code
+      is worse than missing code.
+
+  # Diff-scope: lock the public shape of `animals.Animal`.
+  - id: lock-animal-base
+    type: frozen-members
+    severity: warning
+    scope: diff
+    classes:
+      - "animals.Animal"
+    message: |
+      The {kind} '{member}' on '{qualified_name}' was {action}.
+      `animals.Animal` is the canonical fixture for parser/diff tests;
+      changing its public shape will silently break those tests. Open
+      a discussion before bumping the reference, and update the
+      parser/diff tests in lockstep.
+
+  # Snapshot: the `animals` package shouldn't reach into `store`.
+  - id: animals-must-not-depend-on-store
+    type: forbidden-package-references
+    severity: error
+    scope: snapshot
+    from: ["animals*"]
+    to: ["store*"]
+    message: |
+      Layering violation: package '{source}' must not depend on package
+      '{target}'. `animals` models the domain and is consumed BY higher
+      layers (like `store`); reversing that direction couples the domain
+      to its consumers and breaks the dependency-inversion intent of the
+      demo fixture.
+
+  # Snapshot: nothing in `animals` may reference `store.Cart` directly.
+  - id: no-animal-references-cart
+    type: forbidden-references
+    severity: error
+    scope: snapshot
+    from: ["animals.**"]
+    to: ["store.Cart"]
+    message: |
+      '{source}' references '{target}'. The `animals` package must remain
+      ignorant of checkout/cart concepts — those belong in `store`. If you
+      need an Animal to participate in a transaction, model the
+      interaction in `store` (e.g. via an adapter) instead of pulling
+      `store.Cart` into `animals`.
+
+  # Snapshot: classes inheriting from `animals.Animal` must look like
+  # nouns.
+  - id: animal-subclass-naming
+    type: subclass-naming
+    severity: warning
+    scope: snapshot
+    base: "Animal"
+    name_pattern: "[A-Z][A-Za-z]+"
+    message: |
+      Class '{qualified_name}' inherits from `{base}` but its name
+      ({name}) doesn't match the convention /{pattern}/. Subclasses of
+      Animal should be CapitalisedNouns (Dog, Cat, BlueWhale) — that
+      keeps the diagrams readable and matches the rest of the fixture.
+
+  # Snapshot: package graph must remain a DAG.
+  - id: no-cycles
+    type: no-cyclic-package-dependencies
+    severity: error
+    scope: snapshot
+    message: |
+      Cyclic package dependency detected: {cycle}.
+      Cycles make the architecture unbuildable in isolation and signal a
+      misplaced class. Move the shared types into a leaf package both
+      sides can depend on, or invert the direction with an interface.
+
+  # Snapshot: cap structural complexity.
+  - id: bounded-fanout
+    type: max-class-fanout
+    severity: warning
+    scope: snapshot
+    limit: 5
+    message: |
+      Class '{qualified_name}' references {fanout} other classes directly
+      (limit: {limit}). High fanout makes a class a hub — every change
+      around it ripples outward. Consider extracting a facade, splitting
+      responsibilities, or replacing concrete references with interfaces.

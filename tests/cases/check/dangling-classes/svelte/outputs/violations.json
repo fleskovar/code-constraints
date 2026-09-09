@@ -1,0 +1,7 @@
+[
+  {
+    "element": "lib.LegacyPriceTable",
+    "rule": "no-dangling-classes",
+    "severity": "warning"
+  }
+]

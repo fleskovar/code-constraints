@@ -1,0 +1,3 @@
+engine: lock
+language: python
+targets: ["orders.pricing.**"]

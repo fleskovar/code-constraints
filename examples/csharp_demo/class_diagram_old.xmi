@@ -1,0 +1,224 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xmi:XMI xmlns:xmi="http://www.omg.org/spec/XMI/20110701" xmlns:uml="http://www.omg.org/spec/UML/20110701" xmlns:cdec="http://code-constraints/ext/1" xmi:version="2.1">
+  <uml:Model xmi:id="model-root" name="RootModel" cdec:status="unchanged" cdec:sourceLanguage="csharp">
+    <packagedElement xmi:type="uml:Package" xmi:id="package-394a77ee21b9cb93" name="Catalog" cdec:qualifiedName="Catalog" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-4000e75883dc8bd1" name="Author" cdec:qualifiedName="Catalog.Author" cdec:kind="class" cdec:status="unchanged" cdec:file="Catalog/Author.cs" cdec:startLine="3" cdec:endLine="17">
+        <ownedAttribute xmi:type="uml:Property" name="Name" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Country" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Author" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="name" direction="in" cdec:type="string"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="DisplayName" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-ecd0140942b1c797" name="Book" cdec:qualifiedName="Catalog.Book" cdec:kind="class" cdec:status="unchanged" cdec:file="Catalog/Book.cs" cdec:startLine="3" cdec:endLine="32">
+        <ownedAttribute xmi:type="uml:Property" name="Title" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Author" visibility="public" cdec:type="Author" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Price" visibility="public" cdec:type="decimal" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Stock" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Book" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="title" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="author" direction="in" cdec:type="Author"/>
+          <ownedParameter xmi:type="uml:Parameter" name="price" direction="in" cdec:type="decimal"/>
+          <ownedParameter xmi:type="uml:Parameter" name="stock" direction="in" cdec:type="int"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="IsAvailable" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="requested" direction="in" cdec:type="int"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="bool"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Reserve" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="quantity" direction="in" cdec:type="int"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-24c393f561adbbf9" name="Notifications" cdec:qualifiedName="Notifications" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Interface" xmi:id="class-3b17dcee0169d897" name="INotifier" cdec:qualifiedName="Notifications.INotifier" cdec:kind="interface" cdec:status="unchanged" cdec:file="Notifications/INotifier.cs" cdec:startLine="3" cdec:endLine="6">
+        <ownedOperation xmi:type="uml:Operation" name="Send" visibility="private" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="to" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="message" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="bool"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-e746ee58fb58ca36" name="SmsNotifier" cdec:qualifiedName="Notifications.SmsNotifier" cdec:kind="class" cdec:status="unchanged" cdec:file="Notifications/SmsNotifier.cs" cdec:startLine="3" cdec:endLine="13">
+        <generalization xmi:type="uml:Generalization" cdec:general="INotifier"/>
+        <ownedAttribute xmi:type="uml:Property" name="ShortCode" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="MobileProvider" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Send" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="to" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="message" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="bool"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-3eb2755fcffe676d" name="WhatsAppNotifier" cdec:qualifiedName="Notifications.WhatsAppNotifier" cdec:kind="class" cdec:status="unchanged" cdec:file="Notifications/WhatsAppNotifier.cs" cdec:startLine="3" cdec:endLine="15">
+        <generalization xmi:type="uml:Generalization" cdec:general="INotifier"/>
+        <ownedAttribute xmi:type="uml:Property" name="Sender" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="SmtpHost" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="phone_number" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="country_code" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Send" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="to" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="message" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="bool"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-f9fe15b74e04ac62" name="Orders" cdec:qualifiedName="Orders" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-a505739f9c3263e5" name="Cart" cdec:qualifiedName="Orders.Cart" cdec:kind="class" cdec:status="unchanged" cdec:file="Orders/Cart.cs" cdec:startLine="6" cdec:endLine="57">
+        <ownedAttribute xmi:type="uml:Property" name="Customer" visibility="public" cdec:type="Customer" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Items" visibility="public" cdec:type="List&lt;OrderItem&gt;" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Cart" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="customer" direction="in" cdec:type="Customer"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="AddItem" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="book" direction="in" cdec:type="Book"/>
+          <ownedParameter xmi:type="uml:Parameter" name="quantity" direction="in" cdec:type="int"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="bool"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Total" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="decimal"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Checkout" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="paymentAmount" direction="in" cdec:type="decimal"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-8aa54939fa16aa0b" name="Order" cdec:qualifiedName="Orders.Order" cdec:kind="class" cdec:status="unchanged" cdec:file="Orders/Order.cs" cdec:startLine="3" cdec:endLine="30">
+        <ownedAttribute xmi:type="uml:Property" name="Cart" visibility="public" cdec:type="Cart" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Status" visibility="public" cdec:type="OrderStatus" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Order" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="cart" direction="in" cdec:type="Cart"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Place" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="OrderStatus"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-91514ac910794c14" name="OrderItem" cdec:qualifiedName="Orders.OrderItem" cdec:kind="class" cdec:status="unchanged" cdec:file="Orders/OrderItem.cs" cdec:startLine="5" cdec:endLine="20">
+        <ownedAttribute xmi:type="uml:Property" name="Book" visibility="public" cdec:type="Book" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Quantity" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="OrderItem" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="book" direction="in" cdec:type="Book"/>
+          <ownedParameter xmi:type="uml:Parameter" name="quantity" direction="in" cdec:type="int"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Subtotal" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="decimal"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Enumeration" xmi:id="class-f306e2e1fa626df5" name="OrderStatus" cdec:qualifiedName="Orders.OrderStatus" cdec:kind="enum" cdec:status="unchanged" cdec:file="Orders/OrderStatus.cs" cdec:startLine="3" cdec:endLine="9">
+        <ownedAttribute xmi:type="uml:Property" name="Pending" visibility="public" cdec:type="OrderStatus" isStatic="true" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Placed" visibility="public" cdec:type="OrderStatus" isStatic="true" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Shipped" visibility="public" cdec:type="OrderStatus" isStatic="true" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Cancelled" visibility="public" cdec:type="OrderStatus" isStatic="true" cdec:status="unchanged"/>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-06cb0e243f6bfbb8" name="Users" cdec:qualifiedName="Users" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-a6876b0b15cd7434" name="Admin" cdec:qualifiedName="Users.Admin" cdec:kind="class" cdec:status="unchanged" cdec:file="Users/Admin.cs" cdec:startLine="3" cdec:endLine="17">
+        <generalization xmi:type="uml:Generalization" cdec:general="User"/>
+        <ownedAttribute xmi:type="uml:Property" name="Level" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Admin" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="email" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="name" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="level" direction="in" cdec:type="int"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Role" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-d6dc81e9897aa38b" name="Customer" cdec:qualifiedName="Users.Customer" cdec:kind="class" cdec:status="unchanged" cdec:file="Users/Customer.cs" cdec:startLine="5" cdec:endLine="25">
+        <generalization xmi:type="uml:Generalization" cdec:general="User"/>
+        <ownedAttribute xmi:type="uml:Property" name="Notifier" visibility="public" cdec:type="INotifier" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Address" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Customer" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="email" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="name" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="notifier" direction="in" cdec:type="INotifier"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Role" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Charge" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="amount" direction="in" cdec:type="decimal"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="bool"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-80bacc6c931bb5f2" name="User" cdec:qualifiedName="Users.User" cdec:kind="abstract" cdec:status="unchanged" isAbstract="true" cdec:file="Users/User.cs" cdec:startLine="3" cdec:endLine="15">
+        <ownedAttribute xmi:type="uml:Property" name="Email" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Name" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="User" visibility="protected" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="email" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="name" direction="in" cdec:type="string"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Role" visibility="public" isAbstract="true" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Activity" xmi:id="activity-f19b7c71d93475e4" name="book_availability" cdec:granularity="statement" cdec:status="unchanged" cdec:file="Catalog/Book.cs" cdec:startLine="20" cdec:endLine="25">
+      <node xmi:type="uml:InitialNode" xmi:id="init1" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a2" name="bool inStock = Stock &gt;= requested;" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a3" name="bool priced = Price &gt; 0;" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a4" name="bool result = inStock &amp;&amp; priced;" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a5" name="return result;" cdec:status="unchanged"/>
+      <node xmi:type="uml:ActivityFinalNode" xmi:id="final6" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="init1" target="a2" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a2" target="a3" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a3" target="a4" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a4" target="a5" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a5" target="final6" cdec:status="unchanged"/>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Activity" xmi:id="activity-bbd6a124fbe865ff" name="cart_checkout" cdec:granularity="control-flow" cdec:status="unchanged" cdec:file="Orders/Cart.cs" cdec:startLine="41" cdec:endLine="55">
+      <node xmi:type="uml:InitialNode" xmi:id="init1" cdec:status="unchanged"/>
+      <node xmi:type="uml:DecisionNode" xmi:id="d2" name="Items.Count == 0" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a4" name="return return &quot;empty&quot;;" cdec:status="unchanged"/>
+      <node xmi:type="uml:MergeNode" xmi:id="m3" cdec:status="unchanged"/>
+      <node xmi:type="uml:DecisionNode" xmi:id="d5" name="paymentAmount &lt; Total()" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a7" name="return return &quot;underpaid&quot;;" cdec:status="unchanged"/>
+      <node xmi:type="uml:MergeNode" xmi:id="m6" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a8" name="foreach (var item in Items)" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a9" name="return return &quot;ok&quot;;" cdec:status="unchanged"/>
+      <node xmi:type="uml:ActivityFinalNode" xmi:id="final10" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="init1" target="d2" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d2" target="a4" cdec:guard="yes" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a4" target="m3" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d2" target="m3" cdec:guard="no" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="m3" target="d5" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d5" target="a7" cdec:guard="yes" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a7" target="m6" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d5" target="m6" cdec:guard="no" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="m6" target="a8" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a8" target="a9" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a9" target="final10" cdec:status="unchanged"/>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Interaction" xmi:id="sequence-0ed06cb7eea5f968" name="cart_add_item" cdec:status="unchanged" cdec:file="Orders/Cart.cs" cdec:startLine="18" cdec:endLine="26">
+      <lifeline xmi:type="uml:Lifeline" name="this" cdec:represents="this" cdec:status="unchanged"/>
+      <lifeline xmi:type="uml:Lifeline" name="book" cdec:represents="book" cdec:status="unchanged"/>
+      <lifeline xmi:type="uml:Lifeline" name="Items" cdec:represents="Items" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="IsAvailable()" cdec:sender="this" cdec:receiver="book" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="book" cdec:receiver="this" cdec:isReturn="true" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="Add()" cdec:sender="this" cdec:receiver="Items" cdec:guard="book.IsAvailable(quantity)" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="Items" cdec:receiver="this" cdec:isReturn="true" cdec:guard="book.IsAvailable(quantity)" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="return true" cdec:sender="this" cdec:receiver="this" cdec:isReturn="true" cdec:guard="book.IsAvailable(quantity)" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="return false" cdec:sender="this" cdec:receiver="this" cdec:isReturn="true" cdec:status="unchanged"/>
+      <fragment xmi:type="uml:CombinedFragment" cdec:kind="opt" name="book.IsAvailable(quantity)" cdec:startRow="2" cdec:endRow="4" cdec:status="unchanged"/>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Interaction" xmi:id="sequence-6794564614b37f04" name="order_place" cdec:status="unchanged" cdec:file="Orders/Order.cs" cdec:startLine="15" cdec:endLine="28">
+      <lifeline xmi:type="uml:Lifeline" name="this" cdec:represents="this" cdec:status="unchanged"/>
+      <lifeline xmi:type="uml:Lifeline" name="Cart" cdec:represents="Cart" cdec:status="unchanged"/>
+      <lifeline xmi:type="uml:Lifeline" name="Cart.Customer" cdec:represents="Cart.Customer" cdec:status="unchanged"/>
+      <lifeline xmi:type="uml:Lifeline" name="Cart.Customer.Notifier" cdec:represents="Cart.Customer.Notifier" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="Total()" cdec:sender="this" cdec:receiver="Cart" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="Cart" cdec:receiver="this" cdec:isReturn="true" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="Checkout()" cdec:sender="this" cdec:receiver="Cart" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="result" cdec:sender="Cart" cdec:receiver="this" cdec:isReturn="true" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="Total()" cdec:sender="this" cdec:receiver="Cart" cdec:guard="result == &quot;ok&quot;" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="Cart" cdec:receiver="this" cdec:isReturn="true" cdec:guard="result == &quot;ok&quot;" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="Charge()" cdec:sender="this" cdec:receiver="Cart.Customer" cdec:guard="result == &quot;ok&quot;" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="Cart.Customer" cdec:receiver="this" cdec:isReturn="true" cdec:guard="result == &quot;ok&quot;" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="Send()" cdec:sender="this" cdec:receiver="Cart.Customer.Notifier" cdec:guard="result == &quot;ok&quot;" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="Cart.Customer.Notifier" cdec:receiver="this" cdec:isReturn="true" cdec:guard="result == &quot;ok&quot;" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="return Status" cdec:sender="this" cdec:receiver="this" cdec:isReturn="true" cdec:status="unchanged"/>
+      <fragment xmi:type="uml:CombinedFragment" cdec:kind="alt" name="result == &quot;ok&quot;" cdec:startRow="4" cdec:endRow="9" cdec:status="unchanged"/>
+    </packagedElement>
+  </uml:Model>
+</xmi:XMI>

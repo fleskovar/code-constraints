@@ -1,0 +1,12 @@
+rules:
+  - id: lock-notification-abc
+    type: frozen-members
+    severity: error
+    scope: diff
+    classes: ["notifications.Notification"]
+    kinds: [operation]
+    members: ["send*"]
+    message: |
+      The {kind} '{member}' on '{qualified_name}' was {action}.
+      Notification is a public contract - every concrete notifier must keep
+      its signature stable.

@@ -1,0 +1,11 @@
+# Demo `cdec check` configuration for the python_demo fixture.
+#
+# The fixture is two packages — `animals` (Animal abstract base + Dog concrete)
+# and `store` (Cart). Rules below illustrate every supported rule type.
+language: python
+source: .
+baseline:
+  reference: .cdec/reference.xmi
+output:
+  json: null
+  log: null

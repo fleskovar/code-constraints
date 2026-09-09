@@ -1,0 +1,21 @@
+# Demo `cdec check` configuration for the csharp_demo fixture.
+#
+# The fixture models a small e-commerce domain: Catalog (books + authors),
+# Users (User abstract base, Admin, Customer), Orders (Cart, Order,
+# OrderItem, OrderStatus), and Notifications (INotifier + two concrete
+# notifiers). The rules below illustrate every supported rule type.
+language: csharp
+source: .
+baseline:
+  reference: .cdec/reference.xmi
+output:
+  json: null
+  log: null
+
+# Implementation locks (`cdec lock`, Engine C). `Receipt.formatted` /
+# `Receipt.Formatted` carries a @locked / [Locked] tag; its approved digest
+# lives in .cdec/locks.yaml and `cdec check` verifies it on every run.
+lock:
+  enabled: true
+  include_docstrings: false
+  targets: []                    # globs lock elements WITHOUT needing a tag

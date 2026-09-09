@@ -1,0 +1,20 @@
+[
+  {
+    "element": "Orders.CheckoutService",
+    "member": "class|@no-instantiation",
+    "rule": "freeze-architectural-tags",
+    "severity": "error"
+  },
+  {
+    "element": "Orders.CheckoutService",
+    "member": "operation:Subtotal(n:int):decimal|@no-side-effects",
+    "rule": "freeze-architectural-tags",
+    "severity": "error"
+  },
+  {
+    "element": "Orders.Receipt",
+    "member": "class|@sealed",
+    "rule": "freeze-architectural-tags",
+    "severity": "error"
+  }
+]

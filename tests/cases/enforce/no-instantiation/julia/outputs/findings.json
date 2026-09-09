@@ -1,0 +1,7 @@
+[
+  {
+    "detail": "quick_receipt->Receipt",
+    "element": "orders.Orders.CheckoutService",
+    "rule": "no-instantiation"
+  }
+]

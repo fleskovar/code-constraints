@@ -1,0 +1,10 @@
+rules:
+  - id: catalog-does-not-reference-customer
+    type: forbidden-references
+    severity: error
+    scope: snapshot
+    from: ["catalog.**"]
+    to: ["users.Customer"]
+    message: |
+      '{source}' references '{target}'. Books and authors must remain ignorant
+      of who is buying them.

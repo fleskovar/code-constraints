@@ -1,0 +1,9 @@
+rules:
+  - id: catalog-does-not-reference-customer
+    type: forbidden-references
+    severity: error
+    scope: snapshot
+    from: ["Catalog.**"]
+    to: ["Users.Customer"]
+    message: |
+      '{source}' references '{target}'.

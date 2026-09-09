@@ -1,0 +1,8 @@
+[
+  {
+    "element": "orders",
+    "member": "orders -> users -> orders",
+    "rule": "no-cyclic-package-dependencies",
+    "severity": "error"
+  }
+]

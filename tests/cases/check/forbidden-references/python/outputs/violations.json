@@ -1,0 +1,8 @@
+[
+  {
+    "element": "catalog.Book",
+    "member": "->users.Customer",
+    "rule": "catalog-does-not-reference-customer",
+    "severity": "error"
+  }
+]

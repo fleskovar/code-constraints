@@ -1,0 +1,86 @@
+# Rule set for the csharp_mvc_demo example.
+#
+# The headline rule is `layer-dependencies` — the tag-driven layering check.
+# Each class declares its layer with `[Layer("...")]`, and the allow-matrix
+# below states which layers each one MAY reference. This is the cleanest way to
+# express the MVC invariant: the Model knows nothing about anyone, the View
+# knows the Model, and only the Controller knows both.
+#
+# Every rule carries an explanatory `message:` (supporting `{placeholders}`)
+# that says WHY it exists and HOW to fix a violation.
+
+rules:
+  # --- Snapshot: the MVC layering invariant (the star of this example) ---
+
+  - id: mvc-layer-dependencies
+    type: layer-dependencies
+    severity: error
+    scope: snapshot
+    allow:
+      model: []                 # the Model is a leaf — it references no other layer
+      view: [model]             # the View renders the Model, nothing higher
+      controller: [model, view] # the Controller coordinates both
+    message: |
+      MVC layering violation: a class in layer '{source_layer}' references a
+      class in layer '{target_layer}' ('{source}' -> '{target}'), which is not
+      allowed.
+
+      The dependency arrows must point one way: controller -> view -> model.
+      A lower layer must never reach back up. If the Model needs to notify the
+      outside world, expose data and let the Controller/View pull it, or invert
+      the dependency with an interface defined in the lower layer. Express
+      cross-layer collaborators as constructor-injected fields so the check can
+      see them.
+
+  # --- Snapshot: MVC naming conventions (via marker interfaces) ---
+
+  - id: controllers-end-in-Controller
+    type: subclass-naming
+    severity: error
+    scope: snapshot
+    base: "IController"
+    name_pattern: ".*Controller$"
+    message: |
+      Class '{qualified_name}' implements `{base}` but its name ({name}) does
+      not match /{pattern}/. Controllers must end in `Controller` so their role
+      is obvious at every call site (e.g. `TodoController`). Rename the class.
+
+  - id: views-end-in-View
+    type: subclass-naming
+    severity: error
+    scope: snapshot
+    base: "IView"
+    name_pattern: ".*View$"
+    message: |
+      Class '{qualified_name}' implements `{base}` but its name ({name}) does
+      not match /{pattern}/. Views must end in `View` (e.g. `TodoConsoleView`).
+      Rename the class.
+
+  - id: no-cyclic-package-dependencies
+    type: no-cyclic-package-dependencies
+    severity: error
+    scope: snapshot
+    message: |
+      Cyclic package dependency: {cycle}. MVC is acyclic by construction
+      (Controller -> View -> Model). A cycle almost always means a lower layer
+      grew a reference back up — break it by moving the shared type down or
+      inverting the direction with an interface.
+
+  # --- Diff: freeze the architectural tags against reference.xmi ---
+
+  # Engine A (drift): compares the [Layer]/[Immutable]/[Sealed] tags recorded in
+  # reference.xmi against the current model and fires when one is removed or
+  # weakened. It never inspects method bodies — that is `cdec enforce`'s job.
+  # Try it: delete `[Layer("model")]` from TodoItem and re-run `cdec check`.
+  - id: freeze-architectural-tags
+    type: frozen-rules
+    severity: error
+    scope: diff
+    classes:
+      - "**"
+    message: |
+      Architectural tag drift: the rule '{rule}' on '{member}' of
+      '{qualified_name}' was {action}. These tags pin the MVC layering and the
+      immutability of the domain entity. Re-add the tag, or — if the constraint
+      is genuinely being retired — run `cdec check --update-reference` to accept
+      the new baseline.

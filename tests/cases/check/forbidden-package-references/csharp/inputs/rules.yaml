@@ -1,0 +1,9 @@
+rules:
+  - id: catalog-is-a-leaf-package
+    type: forbidden-package-references
+    severity: error
+    scope: snapshot
+    from: ["Catalog"]
+    to: ["Orders", "Users"]
+    message: |
+      Layering violation: '{source}' must not depend on '{target}'.

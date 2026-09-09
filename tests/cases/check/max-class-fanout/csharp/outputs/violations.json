@@ -1,0 +1,7 @@
+[
+  {
+    "element": "Orders.CheckoutService",
+    "rule": "bounded-class-fanout",
+    "severity": "warning"
+  }
+]

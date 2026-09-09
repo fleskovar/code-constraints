@@ -1,0 +1,12 @@
+rules:
+  - id: no-dangling-classes
+    type: dangling-classes
+    severity: warning
+    scope: snapshot
+    entry_points:
+      - "orders.CheckoutService"
+    framework_bases: ["BaseCommand"]
+    message: |
+      Class '{qualified_name}' has no incoming references inside this project.
+      If bootstrap code wires it up, add it to `entry_points:`. Otherwise it is
+      dead code - delete it.

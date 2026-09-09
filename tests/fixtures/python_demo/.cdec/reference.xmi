@@ -1,0 +1,88 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xmi:XMI xmlns:xmi="http://www.omg.org/spec/XMI/20110701" xmlns:uml="http://www.omg.org/spec/UML/20110701" xmlns:cdec="http://code-constraints/ext/1" xmi:version="2.1">
+  <uml:Model xmi:id="model-root" name="RootModel" cdec:status="unchanged" cdec:sourceLanguage="python">
+    <packagedElement xmi:type="uml:Package" xmi:id="package-b20c1cbdd28dba17" name="animals" cdec:qualifiedName="animals" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-b1f8fda45a8b9d88" name="Animal" cdec:qualifiedName="animals.Animal" cdec:kind="abstract" cdec:status="unchanged" isAbstract="true" cdec:file="animals/base.py" cdec:startLine="6" cdec:endLine="18">
+        <generalization xmi:type="uml:Generalization" cdec:general="ABC"/>
+        <ownedAttribute xmi:type="uml:Property" name="species" visibility="public" cdec:type="str" isStatic="true" cdec:default="'unknown'" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="name" visibility="public" cdec:type="str" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="legs" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="__init__" visibility="protected" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="name" direction="in" cdec:type="str"/>
+          <ownedParameter xmi:type="uml:Parameter" name="legs" direction="in" cdec:type="int" cdec:default="4"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="None"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="speak" visibility="public" isAbstract="true" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="str"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="describe" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="str"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-3a98bcb0b7b753a5" name="Dog" cdec:qualifiedName="animals.Dog" cdec:kind="class" cdec:status="unchanged" cdec:file="animals/base.py" cdec:startLine="21" cdec:endLine="33">
+        <generalization xmi:type="uml:Generalization" cdec:general="Animal"/>
+        <ownedAttribute xmi:type="uml:Property" name="breed" visibility="public" cdec:type="str" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="__init__" visibility="protected" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="name" direction="in" cdec:type="str"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="None"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="speak" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="str"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-04fb8497b72b9a2a" name="store" cdec:qualifiedName="store" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-29671f288729b476" name="Cart" cdec:qualifiedName="store.Cart" cdec:kind="class" cdec:status="unchanged" cdec:file="store/cart.py" cdec:startLine="4" cdec:endLine="22">
+        <ownedAttribute xmi:type="uml:Property" name="items" visibility="public" cdec:type="list[str]" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="_total" visibility="protected" cdec:type="float" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="__init__" visibility="protected" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="None"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="add" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="item" direction="in" cdec:type="str"/>
+          <ownedParameter xmi:type="uml:Parameter" name="price" direction="in" cdec:type="float"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="None"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="checkout" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="payment" direction="in" cdec:type=""/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="str"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="format_receipt" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="str"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Activity" xmi:id="activity-c8ca017d9457f79d" name="dog_speak" cdec:granularity="control-flow" cdec:status="unchanged" cdec:file="animals/base.py" cdec:startLine="27" cdec:endLine="34">
+      <node xmi:type="uml:InitialNode" xmi:id="init1" cdec:status="unchanged"/>
+      <node xmi:type="uml:DecisionNode" xmi:id="d2" name="self.breed == 'mixed'" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a4" name="return 'Woof'" cdec:status="unchanged"/>
+      <node xmi:type="uml:DecisionNode" xmi:id="d5" name="self.breed == 'wolf'" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a7" name="return 'Howl'" cdec:status="unchanged"/>
+      <node xmi:type="uml:OpaqueAction" xmi:id="a8" name="return 'Bark'" cdec:status="unchanged"/>
+      <node xmi:type="uml:MergeNode" xmi:id="m6" cdec:status="unchanged"/>
+      <node xmi:type="uml:MergeNode" xmi:id="m3" cdec:status="unchanged"/>
+      <node xmi:type="uml:ActivityFinalNode" xmi:id="final9" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="init1" target="d2" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d2" target="a4" cdec:guard="yes" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a4" target="m3" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d2" target="d5" cdec:guard="no" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d5" target="a7" cdec:guard="yes" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a7" target="m6" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="d5" target="a8" cdec:guard="no" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="a8" target="m6" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="m6" target="m3" cdec:status="unchanged"/>
+      <edge xmi:type="uml:ControlFlow" source="m3" target="final9" cdec:status="unchanged"/>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Interaction" xmi:id="sequence-15c19daf480105fe" name="checkout_flow" cdec:status="unchanged" cdec:file="store/cart.py" cdec:startLine="14" cdec:endLine="19">
+      <lifeline xmi:type="uml:Lifeline" name="self" cdec:represents="self" cdec:status="unchanged"/>
+      <lifeline xmi:type="uml:Lifeline" name="payment" cdec:represents="payment" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="authorize()" cdec:sender="self" cdec:receiver="payment" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="payment" cdec:receiver="self" cdec:isReturn="true" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="capture()" cdec:sender="self" cdec:receiver="payment" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="" cdec:sender="payment" cdec:receiver="self" cdec:isReturn="true" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="format_receipt()" cdec:sender="self" cdec:receiver="self" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="receipt" cdec:sender="self" cdec:receiver="self" cdec:isReturn="true" cdec:status="unchanged"/>
+      <message xmi:type="uml:Message" name="return receipt" cdec:sender="self" cdec:receiver="self" cdec:isReturn="true" cdec:status="unchanged"/>
+    </packagedElement>
+  </uml:Model>
+</xmi:XMI>

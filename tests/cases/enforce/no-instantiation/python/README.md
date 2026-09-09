@@ -1,0 +1,108 @@
+# `@no_instantiation` — an orchestrator wires, it does not build (Python)
+
+## What this proves
+
+`@no_instantiation(allow=[…])` is the constraint behind "this orchestrator wires collaborators together; it does not build them". This case pins that the allow-list is consulted by **short type name**, and that everything not on it fires.
+
+**Engine:** B — conformance — `cdec enforce`  
+**Constraint:** [`no-instantiation`](../../../../../docs/RULES_CATALOGUE.md#no-instantiation)  
+**Language:** Python  
+**Runner:** `tests/case_runner.py::_run_enforce`
+
+## Inputs
+
+| File | What it is |
+| --- | --- |
+| `inputs/case.yaml` | Engine and language — the ambient inputs, written down so nothing about the run is implicit |
+| `inputs/src/orders/checkout.py` | source under test |
+| `inputs/src/orders/models.py` | source under test |
+
+### Why each element is there
+
+| Element | Demonstrates |
+| --- | --- |
+| `orders.CheckoutService` | carries `allow=["AuditEntry"]` at class level, so clause 3 covers every method below |
+| `orders.CheckoutService.checkout` | builds `AuditEntry("checkout")` — on the allow-list, so silent |
+| `orders.CheckoutService.quick_receipt` | builds `Receipt(total)` — not on the list. **The violation.** |
+
+Every element has a line. An element nobody can justify is an element to delete.
+
+## Expected output
+
+`outputs/findings.json` — One row per finding, sorted by `(rule, element, detail)`. `element` is the class the finding is attributed to; `detail` is the stable discriminator (`method->Type` for a construction, `method.field` for a reassignment) that lets two findings of one rule on one class carry different review keys.
+
+```json
+[
+  {
+    "detail": "quick_receipt->Receipt",
+    "element": "orders.CheckoutService",
+    "rule": "no-instantiation"
+  }
+]
+```
+
+**Deliberately absent:** messages, file paths and line numbers. A rule's `message:` is prose that gets rewritten, a path is a Windows/POSIX hazard, and a line number moves when someone adds a comment. What the baseline pins is the *identity* of each finding.
+
+## Baseline provenance
+
+**Computed by hand** from the constraint's definition in the catalogue, then checked against the engine. The walkthrough below is the derivation: every row in the baseline appears in it, and no row appears that the walkthrough does not produce.
+
+## Walkthrough
+
+### The rules, stated once
+
+1. `cdec enforce` **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
+2. Construction detection in this language is **heuristic**. There is no type resolution at parse time, so a "construction" is *a call whose callee is a known project class, or whose name is Capitalised*. `Decimal("1.00")` and `Path(p)` would be flagged too — `allow=[…]` is the documented escape hatch and you will need it.
+3. Applied to a **class** the tag covers every method in it. Applied to a method it overrides the class-level setting for that method only.
+4. `allow:` holds **short type names**. A construction whose type is on the list is permitted; omit `allow` entirely for "nothing at all".
+5. The finding is attributed to the tagged class, with the discriminator `{method}->{Type}`.
+6. **A type may always construct itself.** Without that rule every `T.new` / inner constructor would be flagged, and the idiom would be unusable.
+
+### Applying them
+
+**Step 1 — find the tagged class and read its allow-list (clauses 3–4).**
+`orders.CheckoutService` → `allow = {AuditEntry}`.
+
+**Step 2 — find every construction inside it (clause 2).**
+
+| Method | Constructs | On the allow-list? | Verdict |
+| --- | --- | --- | --- |
+| `checkout` | `AuditEntry("checkout")` → `AuditEntry` | ✅ | silent |
+| `quick_receipt` | `Receipt(total)` → `Receipt` | ❌ | **Fires** |
+
+**Step 3 — the finding (clause 5).** Attributed to `orders.CheckoutService`, discriminated
+`quick_receipt->Receipt`.
+
+The `checkout` row is not decoration: it proves the allow-list is actually consulted
+rather than the rule simply firing on everything. Delete `AuditEntry` from `allow` and
+this case grows a second finding — which is the quickest way to convince yourself the
+mechanism works.
+
+### Elements that produce nothing
+
+| Element | Why it is absent from the output |
+| --- | --- |
+| `orders.CheckoutService.checkout` | `AuditEntry` is named in `allow:`. The one collaborator this orchestrator is trusted to build. |
+
+### Python-specific notes
+
+This is the tag where Python's heuristic bites. With no type resolution, *any* Capitalised callee counts as a construction — `Decimal("1.00")`, `Path(p)`, `datetime.now()` would all be flagged. `allow=[…]` is not a workaround here, it is the intended interface, and a real Python `@no_instantiation` list is usually longer than this one.
+
+## Why this proves the code is correct
+
+- **It pins:** that the tag covers every method of the class it sits on, that `allow:` is matched by short type name, and that the discriminator names the method and the constructed type.
+- **It would catch:** a regression that ignored `allow:` (which would make the tag unusable in Python, where the heuristic over-reports), one that only checked the constructor, or one that stopped covering methods inherited into the class's own body.
+- **It does not cover:** the method-level form of the tag, which overrides the class-level setting for one method only, and the empty `allow` case meaning "nothing at all".
+
+## How to run and debug
+
+```bash
+make test-case CASE=enforce/no-instantiation/python
+make debug-case CASE=enforce/no-instantiation/python
+```
+
+**Start here:** breakpoint in `tests/case_runner.py::_run_enforce`, then step into the engine. Watch `literal_set` parse the `allow=` value — it reads `["A"]` and `{"A"}` alike, so one reader serves every language.
+
+## When to change this case
+
+A red run is a regression until proven otherwise — do not regenerate the baseline to get green. If the requirement genuinely changed, add a new case for the new behaviour and retire this one explicitly. Regenerating (`UPDATE_BASELINES=1 make test-case CASE=enforce/no-instantiation/python`) produces a diff a human reads line by line, in a commit that changes baselines and nothing else.

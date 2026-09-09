@@ -1,0 +1,10 @@
+version: 1
+locks:
+- target: orders.Receipt.formatted
+  kind: method
+  algo: odin-ts/1
+  digest: 3b0cb065d3ff19bb80670a65f65816b1ff4b71ddaebac1b16a086f7e4eaaa464
+  file: orders/billing.odin
+  locked_at: '2026-08-08T22:22:14+00:00'
+  locked_by: Fran
+  reason: demo baseline

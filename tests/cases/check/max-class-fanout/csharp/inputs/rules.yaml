@@ -1,0 +1,11 @@
+rules:
+  - id: bounded-class-fanout
+    type: max-class-fanout
+    severity: warning
+    scope: snapshot
+    limit: 6
+    ignore:
+      - "App.CompositionRoot"
+    message: |
+      Class '{qualified_name}' references {fanout} other classes directly
+      (limit: {limit}).

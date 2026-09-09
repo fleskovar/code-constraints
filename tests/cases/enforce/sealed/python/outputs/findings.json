@@ -1,0 +1,7 @@
+[
+  {
+    "detail": "base:Receipt",
+    "element": "orders.DiscountedReceipt",
+    "rule": "sealed"
+  }
+]

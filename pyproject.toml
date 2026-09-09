@@ -1,0 +1,106 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "code-constraints"
+version = "0.1.0"
+description = "Enforce architectural and implementation constraints on a codebase: UML models, drift checks, conformance rules, and implementation locks."
+keywords = ["architecture", "constraints", "lint", "uml", "ci", "code-review", "governance"]
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Francisco Leskovar" }]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Documentation",
+    "Typing :: Typed",
+]
+dependencies = [
+    "lxml>=5.0",
+    "typer>=0.12",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "gitpython>=3.1",
+    "tree-sitter>=0.23",
+    "tree-sitter-c-sharp>=0.23",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-odin>=1.2",
+    "tree-sitter-lua>=0.4",
+    "tree-sitter-julia>=0.23",
+    # Required for the /api/xmi/diff multipart upload endpoint.
+    "python-multipart>=0.0.20",
+    # Rule definitions and baseline files for `cdec check`.
+    "pyyaml>=6.0",
+    # Modern interactive CLI session (`cdec` with no subcommand).
+    "rich>=13.0",
+    "questionary>=2.0",
+]
+
+[project.optional-dependencies]
+# Expose the three engines + the model pipeline to coding harnesses over MCP
+# (`cdec-mcp`). Optional so the CLI and CI use of the package stay dependency-light.
+mcp = [
+    "mcp>=2.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    # starlette's TestClient (used by the web-API tests) needs an HTTP client:
+    # httpx for starlette < 1.0, httpx2 from starlette 1.x on. Ship both so the
+    # suite runs regardless of which starlette the resolver picked.
+    "httpx>=0.27",
+    "httpx2>=0.1",
+    # `make dist` / `make package` build the wheel + sdist through this.
+    "build>=1.2",
+]
+
+[project.scripts]
+cdec = "code_constraints.cli.__main__:app"
+cdec-mcp = "code_constraints.mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/fleskovar/code-constraints"
+Repository = "https://github.com/fleskovar/code-constraints"
+Issues = "https://github.com/fleskovar/code-constraints/issues"
+Documentation = "https://github.com/fleskovar/code-constraints/blob/main/docs/TUTORIAL.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/code_constraints"]
+
+# Bundle the copyable assets (rule shims + Claude agents) into the wheel so
+# the interactive `cdec` session can copy them into a target project when the
+# package is installed (not just editable). The scaffold module also falls back
+# to the repo-relative originals for editable installs.
+[tool.hatch.build.targets.wheel.force-include]
+"shims/python/cdec_rules.py" = "code_constraints/cli/_assets/shims/python/cdec_rules.py"
+"shims/csharp/CodeConstraintsRules.cs" = "code_constraints/cli/_assets/shims/csharp/CodeConstraintsRules.cs"
+"shims/julia/CdecRules.jl" = "code_constraints/cli/_assets/shims/julia/CdecRules.jl"
+"shims/lua/cdec_rules.lua" = "code_constraints/cli/_assets/shims/lua/cdec_rules.lua"
+"shims/odin/cdec_rules.odin" = "code_constraints/cli/_assets/shims/odin/cdec_rules.odin"
+".claude/agents/cdec-architect.md" = "code_constraints/cli/_assets/agents/cdec-architect.md"
+".claude/agents/oop-refactor-architect.md" = "code_constraints/cli/_assets/agents/oop-refactor-architect.md"
+".claude/skills/cdec-architecture-loop/SKILL.md" = "code_constraints/cli/_assets/skills/cdec-architecture-loop/SKILL.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"

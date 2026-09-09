@@ -1,0 +1,25 @@
+[
+  {
+    "category": "class-kind-changed",
+    "element": "catalog.Book"
+  },
+  {
+    "category": "attribute-added",
+    "element": "catalog.Book",
+    "member": "isbn:string"
+  },
+  {
+    "category": "operation-signature-changed",
+    "element": "catalog.Book",
+    "member": "pages(hardback:boolean):number"
+  },
+  {
+    "category": "attribute-removed",
+    "element": "catalog.Book",
+    "member": "rating:number"
+  },
+  {
+    "category": "class-added",
+    "element": "catalog.Series"
+  }
+]

@@ -1,0 +1,10 @@
+from cdec_rules import locked
+
+
+class Receipt:
+    def __init__(self, total: float, lines: int) -> None:
+        self.total: float = total
+        self.lines: int = lines
+
+    def formatted(self) -> str:
+        return f"{self.lines} line(s) - total {self.total:.2f}"

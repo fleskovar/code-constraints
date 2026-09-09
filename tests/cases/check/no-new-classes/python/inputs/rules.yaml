@@ -1,0 +1,10 @@
+rules:
+  - id: no-new-classes
+    type: no-new-classes
+    severity: warning
+    scope: diff
+    ignore:
+      - "testing.**"
+    message: |
+      New class '{qualified_name}' appeared. New top-level types in this
+      subsystem must be agreed in the design doc first.

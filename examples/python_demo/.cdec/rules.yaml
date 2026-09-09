@@ -1,0 +1,174 @@
+# Demo rule set for the python_demo fixture — the Python port of the
+# csharp_demo rules. Severity is mixed: architectural invariants
+# (layering, naming) are `error`, drift signals (new/removed classes,
+# fanout) are `warning`. Each rule carries an explanatory `message:`
+# that tells the developer WHY the rule exists and HOW to address the
+# violation. Messages support `{placeholders}` and YAML block scalars
+# (`message: |`).
+
+rules:
+  # --- Diff-scope: drift signals ---
+
+  - id: no-new-classes
+    type: no-new-classes
+    severity: warning
+    scope: diff
+    message: |
+      New class '{qualified_name}' was introduced.
+      The python_demo fixture is a curated reference; new classes change
+      what diagrams and parser tests cover. If this is intentional, run
+      `cdec check --update-reference` to bump the snapshot.
+
+  - id: no-removed-classes
+    type: no-removed-classes
+    severity: warning
+    scope: diff
+    message: |
+      Class '{qualified_name}' was removed. Confirm no other module
+      still expects it. If deliberate, run
+      `cdec check --update-reference`.
+
+  # The `Notification` ABC is part of the public API surface. Adding or
+  # removing operations on it requires a deliberate baseline bump.
+  - id: lock-notification-abc
+    type: frozen-members
+    severity: error
+    scope: diff
+    classes:
+      - "notifications.Notification"
+    kinds: [operation]
+    message: |
+      The {kind} '{member}' on '{qualified_name}' was {action}.
+      Notification is a public contract — every concrete notifier
+      (EmailNotifier, SmsNotifier, and downstream production adapters)
+      must keep its signature shape stable. If this change is
+      intentional and downstream impls have been updated in lockstep,
+      run `cdec check --update-reference` to accept the new baseline.
+
+  # Freeze the architectural-rule tags themselves. This is Engine A
+  # (drift) — it compares the tags recorded in reference.xmi against the
+  # current model and fires when one is removed or weakened. It never
+  # inspects method bodies; that's the separate `cdec enforce` command.
+  # Try it: delete `@sealed` from `orders.billing.Receipt` and re-run
+  # `cdec check` — this rule will flag the removal.
+  - id: freeze-architectural-tags
+    type: frozen-rules
+    severity: error
+    scope: diff
+    classes:
+      - "orders.**"
+    message: |
+      Architectural tag drift: the rule '{rule}' on '{member}' of
+      '{qualified_name}' was {action}. These tags encode deliberate
+      design constraints (factory-only construction, immutability,
+      sealing). Re-add the tag, or — if the constraint is genuinely
+      being retired — run `cdec check --update-reference` to accept it.
+
+  # --- Snapshot: architectural invariants ---
+
+  - id: catalog-is-a-leaf-package
+    type: forbidden-package-references
+    severity: error
+    scope: snapshot
+    from: ["catalog"]
+    to: ["orders", "users", "notifications"]
+    message: |
+      Layering violation: '{source}' must not depend on '{target}'.
+      `catalog` describes books and authors — pure domain data. It must
+      stay at the bottom of the dependency graph so that any caller can
+      use it without dragging in orders/users/notifications. Move the
+      offending field/reference to whichever package owns the workflow
+      (likely `orders`).
+
+  - id: notifications-is-a-leaf-package
+    type: forbidden-package-references
+    severity: error
+    scope: snapshot
+    from: ["notifications"]
+    to: ["orders", "users", "catalog"]
+    message: |
+      Layering violation: '{source}' must not depend on '{target}'.
+      `notifications` defines a transport-agnostic Notification base
+      and its concrete adapters. Coupling it to domain types (users,
+      orders, catalog) defeats the whole point of having a notifier
+      abstraction — pass plain strings or DTOs instead.
+
+  - id: users-does-not-depend-on-orders-or-catalog
+    type: forbidden-package-references
+    severity: error
+    scope: snapshot
+    from: ["users"]
+    to: ["orders", "catalog"]
+    message: |
+      Layering violation: '{source}' must not depend on '{target}'.
+      `users` may know about `notifications` (Customer holds a
+      Notification), but it must not know about orders or catalog —
+      those sit ABOVE users in the dependency graph. If a user needs to
+      participate in an order, model the interaction in `orders`.
+
+  - id: notifier-implementations-must-end-in-Notifier
+    type: subclass-naming
+    severity: error
+    scope: snapshot
+    base: "Notification"
+    name_pattern: ".*Notifier$"
+    message: |
+      Class '{qualified_name}' inherits from `{base}` but its name
+      ({name}) does not match /{pattern}/. Concrete notifiers must end
+      in `Notifier` so the role is obvious at every call site (e.g.
+      `EmailNotifier`, `SmsNotifier`, `WhatsAppNotifier`). Rename the
+      class or have it inherit from a different base.
+
+  - id: catalog-does-not-reference-customer
+    type: forbidden-references
+    severity: error
+    scope: snapshot
+    from: ["catalog.**"]
+    to: ["users.Customer"]
+    message: |
+      '{source}' references '{target}'. Books and authors must remain
+      ignorant of who's buying them — purchase workflows belong in
+      orders/users. If you need a customer-specific view of the catalog,
+      build it in `orders` (e.g. a `CustomerCatalogView`) rather than
+      poisoning `catalog` with users types.
+
+  - id: no-dangling-classes
+    type: dangling-classes
+    severity: warning
+    scope: snapshot
+    entry_points:
+      - "users.Admin"
+      - "orders.Order"
+      - "orders.CheckoutService"
+      - "orders.Receipt"
+      - "orders.AuditEntry"
+      - "notifications.EmailNotifier"
+      - "notifications.SmsNotifier"
+    message: |
+      Class '{qualified_name}' has no incoming references inside this
+      project. If application bootstrap code (a DI container, a `main`
+      entry point) wires it up, add its qualified name to this rule's
+      `entry_points:` list. Otherwise it's dead code — delete it.
+
+  - id: no-cyclic-package-dependencies
+    type: no-cyclic-package-dependencies
+    severity: error
+    scope: snapshot
+    message: |
+      Cyclic package dependency: {cycle}. Package cycles make modules
+      impossible to test or ship independently. Resolve by (a) moving
+      shared types into a leaf package both sides can depend on, or
+      (b) inverting one direction with an interface (define the
+      protocol in the lower package, implement in the upper).
+
+  - id: bounded-class-fanout
+    type: max-class-fanout
+    severity: warning
+    scope: snapshot
+    limit: 6
+    message: |
+      Class '{qualified_name}' references {fanout} other classes
+      directly (limit: {limit}). High fanout signals a hub: every
+      change around it ripples outward. Consider splitting
+      responsibilities, introducing a facade, or depending on
+      protocols/ABCs instead of concrete types.

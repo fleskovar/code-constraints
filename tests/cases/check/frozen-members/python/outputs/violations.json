@@ -1,0 +1,14 @@
+[
+  {
+    "element": "notifications.Notification",
+    "member": "operation:send(message:str):None",
+    "rule": "lock-notification-abc",
+    "severity": "error"
+  },
+  {
+    "element": "notifications.Notification",
+    "member": "operation:send(message:str,urgent:bool):None",
+    "rule": "lock-notification-abc",
+    "severity": "error"
+  }
+]

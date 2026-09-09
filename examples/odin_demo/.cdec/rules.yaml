@@ -1,0 +1,93 @@
+# Demo rule set for the odin_demo fixture. Severity is mixed: architectural
+# invariants (layering) are `error`, drift signals (new/removed classes,
+# fanout) are `warning`. Each rule carries an explanatory `message:` saying
+# WHY it exists and HOW to address a violation.
+
+rules:
+  # --- Diff-scope: drift signals ---
+
+  - id: no-new-classes
+    type: no-new-classes
+    severity: warning
+    scope: diff
+    message: |
+      New class '{qualified_name}' was introduced.
+      The odin_demo fixture is a curated reference; new classes change what
+      diagrams and parser tests cover. If this is intentional, run
+      `cdec check --update-reference` to bump the snapshot.
+
+  - id: no-removed-classes
+    type: no-removed-classes
+    severity: warning
+    scope: diff
+    message: |
+      Class '{qualified_name}' was removed. Confirm no other module still
+      expects it. If deliberate, run `cdec check --update-reference`.
+
+  # Freeze the architectural-rule tags themselves. This is Engine A (drift) —
+  # it compares the tags recorded in reference.xmi against the current model
+  # and fires when one is removed or weakened. It never inspects bodies; that
+  # is the separate `cdec enforce` command.
+  # Try it: delete the //@cdec sealed tag from orders.Receipt and re-run
+  # `cdec check` — this rule flags the removal.
+  - id: freeze-architectural-tags
+    type: frozen-rules
+    severity: error
+    scope: diff
+    classes:
+      - "orders.**"
+    message: |
+      Architectural tag drift: the rule '{rule}' on '{member}' of
+      '{qualified_name}' was {action}. These tags encode deliberate design
+      constraints (factory-only construction, immutability, sealing). Re-add
+      the tag, or — if the constraint is genuinely being retired — run
+      `cdec check --update-reference` to accept it.
+
+  # --- Snapshot: architectural invariants ---
+
+  - id: catalog-is-a-leaf-package
+    type: forbidden-package-references
+    severity: error
+    scope: snapshot
+    from: ["catalog"]
+    to: ["orders"]
+    message: |
+      Layering violation: '{source}' must not depend on '{target}'.
+      `catalog` describes books and authors — pure domain data. It must stay at
+      the bottom of the dependency graph so any caller can use it without
+      dragging in order workflows. Move the offending reference to `orders`.
+
+  # The same constraint expressed with tags rather than package paths: every
+  # class carries a //@cdec layer("...") tag, and this matrix says which
+  # direction is allowed.
+  - id: layer-directions
+    type: layer-dependencies
+    severity: error
+    scope: snapshot
+    allow:
+      orders: ["catalog"]
+      catalog: []
+    message: |
+      Layer '{source_layer}' may not depend on layer '{target_layer}'
+      ('{source}' -> '{target}'). Orders may build on catalog; catalog must
+      stay standalone.
+
+  - id: no-cyclic-package-dependencies
+    type: no-cyclic-package-dependencies
+    severity: error
+    scope: snapshot
+    message: |
+      Cyclic package dependency: {cycle}. Package cycles make modules
+      impossible to test or ship independently. Resolve by moving shared types
+      into a leaf package, or by inverting one direction with an interface.
+
+  - id: bounded-class-fanout
+    type: max-class-fanout
+    severity: warning
+    scope: snapshot
+    limit: 6
+    message: |
+      Class '{qualified_name}' references {fanout} other classes directly
+      (limit: {limit}). High fanout signals a hub: every change around it
+      ripples outward. Consider splitting responsibilities or introducing a
+      facade.

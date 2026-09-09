@@ -1,0 +1,7 @@
+[
+  {
+    "element": "notifications.SmsNotifier",
+    "rule": "no-removed-classes",
+    "severity": "error"
+  }
+]

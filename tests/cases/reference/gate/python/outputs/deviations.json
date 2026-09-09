@@ -1,0 +1,30 @@
+[
+  {
+    "category": "operation-signature-changed",
+    "element": "catalog.Author",
+    "member": "books(sort:bool):list[Book]"
+  },
+  {
+    "category": "operation-added",
+    "element": "catalog.Author",
+    "member": "followers():int"
+  },
+  {
+    "category": "attribute-changed",
+    "element": "catalog.Author",
+    "member": "rating:float"
+  },
+  {
+    "category": "operation-return-type-changed",
+    "element": "catalog.Author",
+    "member": "retired():str"
+  },
+  {
+    "category": "class-removed",
+    "element": "catalog.LegacyIndex"
+  },
+  {
+    "category": "class-added",
+    "element": "catalog.Series"
+  }
+]

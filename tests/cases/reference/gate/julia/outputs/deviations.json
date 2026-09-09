@@ -1,0 +1,21 @@
+[
+  {
+    "category": "attribute-added",
+    "element": "catalog.Catalog.Book",
+    "member": "isbn:String"
+  },
+  {
+    "category": "operation-signature-changed",
+    "element": "catalog.Catalog.Book",
+    "member": "pages(hardback:Bool):Int"
+  },
+  {
+    "category": "attribute-changed",
+    "element": "catalog.Catalog.Book",
+    "member": "rating:Float64"
+  },
+  {
+    "category": "class-added",
+    "element": "catalog.Catalog.Series"
+  }
+]

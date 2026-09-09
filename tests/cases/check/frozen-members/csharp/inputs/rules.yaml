@@ -1,0 +1,10 @@
+rules:
+  - id: lock-notification-abc
+    type: frozen-members
+    severity: error
+    scope: diff
+    classes: ["Notifications.Notification"]
+    kinds: [operation]
+    members: ["Send*"]
+    message: |
+      The {kind} '{member}' on '{qualified_name}' was {action}.

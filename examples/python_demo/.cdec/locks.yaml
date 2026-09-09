@@ -1,0 +1,10 @@
+version: 1
+locks:
+- target: orders.Receipt.formatted
+  kind: method
+  algo: py-ast/1
+  digest: def9d237e48b6d2aae2cc46251c3b670d563130c551bf3116d394a097fe35863
+  file: orders/billing.py
+  locked_at: '2026-08-02T21:00:38+00:00'
+  locked_by: Fran
+  reason: receipt wording is contractual; finance signed off on it

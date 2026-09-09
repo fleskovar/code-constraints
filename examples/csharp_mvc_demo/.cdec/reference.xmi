@@ -1,0 +1,89 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xmi:XMI xmlns:xmi="http://www.omg.org/spec/XMI/20110701" xmlns:uml="http://www.omg.org/spec/UML/20110701" xmlns:cdec="http://code-constraints/ext/1" xmi:version="2.1">
+  <uml:Model xmi:id="model-root" name="RootModel" cdec:status="unchanged" cdec:sourceLanguage="csharp">
+    <packagedElement xmi:type="uml:Package" xmi:id="package-85d2bde009826062" name="Controller" cdec:qualifiedName="Controller" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Interface" xmi:id="class-f1e8d5dc64b1e124" name="IController" cdec:qualifiedName="Controller.IController" cdec:kind="interface" cdec:status="unchanged" cdec:file="Controller/IController.cs" cdec:startLine="11" cdec:endLine="15">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;controller&quot;"/>
+        </cdec:rule>
+        <ownedOperation xmi:type="uml:Operation" name="Handle" visibility="private" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="command" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-c00f5227d62915ea" name="TodoController" cdec:qualifiedName="Controller.TodoController" cdec:kind="class" cdec:status="unchanged" cdec:file="Controller/TodoController.cs" cdec:startLine="20" cdec:endLine="46">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;controller&quot;"/>
+        </cdec:rule>
+        <generalization xmi:type="uml:Generalization" cdec:general="IController"/>
+        <ownedAttribute xmi:type="uml:Property" name="_repo" visibility="private" cdec:type="TodoRepository" isReadOnly="true" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="_view" visibility="private" cdec:type="IView" isReadOnly="true" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="TodoController" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="repo" direction="in" cdec:type="TodoRepository"/>
+          <ownedParameter xmi:type="uml:Parameter" name="view" direction="in" cdec:type="IView"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Handle" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="command" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-b35dc282f0988295" name="Model" cdec:qualifiedName="Model" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-dcf79b051ebc06fd" name="TodoItem" cdec:qualifiedName="Model.TodoItem" cdec:kind="class" cdec:status="unchanged" cdec:file="Model/TodoItem.cs" cdec:startLine="17" cdec:endLine="33">
+        <cdec:rule name="immutable"/>
+        <cdec:rule name="sealed"/>
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;model&quot;"/>
+        </cdec:rule>
+        <ownedAttribute xmi:type="uml:Property" name="Title" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Done" visibility="public" cdec:type="bool" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="TodoItem" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="title" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="done" direction="in" cdec:type="bool"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="WithDone" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="done" direction="in" cdec:type="bool"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="TodoItem"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-43f248dec2e9ce53" name="TodoRepository" cdec:qualifiedName="Model.TodoRepository" cdec:kind="class" cdec:status="unchanged" cdec:file="Model/TodoRepository.cs" cdec:startLine="13" cdec:endLine="33">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;model&quot;"/>
+        </cdec:rule>
+        <ownedAttribute xmi:type="uml:Property" name="_items" visibility="private" cdec:type="List&lt;TodoItem&gt;" isReadOnly="true" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="Items" visibility="public" cdec:type="IReadOnlyList&lt;TodoItem&gt;" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="Add" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="title" direction="in" cdec:type="string"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Toggle" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="index" direction="in" cdec:type="int"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-2b5caba6549880cb" name="View" cdec:qualifiedName="View" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Interface" xmi:id="class-51a6b3f1efffad98" name="IView" cdec:qualifiedName="View.IView" cdec:kind="interface" cdec:status="unchanged" cdec:file="View/IView.cs" cdec:startLine="15" cdec:endLine="19">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;view&quot;"/>
+        </cdec:rule>
+        <ownedOperation xmi:type="uml:Operation" name="Render" visibility="private" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-8cceb96723d1c442" name="TodoConsoleView" cdec:qualifiedName="View.TodoConsoleView" cdec:kind="class" cdec:status="unchanged" cdec:file="View/TodoConsoleView.cs" cdec:startLine="18" cdec:endLine="37">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;view&quot;"/>
+        </cdec:rule>
+        <generalization xmi:type="uml:Generalization" cdec:general="IView"/>
+        <ownedAttribute xmi:type="uml:Property" name="_repo" visibility="private" cdec:type="TodoRepository" isReadOnly="true" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="TodoConsoleView" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="repo" direction="in" cdec:type="TodoRepository"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="Render" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="void"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+  </uml:Model>
+</xmi:XMI>

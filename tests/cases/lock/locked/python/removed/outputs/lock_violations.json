@@ -1,0 +1,6 @@
+[
+  {
+    "kind": "removed",
+    "target": "orders.Receipt.formatted"
+  }
+]

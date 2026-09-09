@@ -1,0 +1,8 @@
+rules:
+  - id: no-removed-classes
+    type: no-removed-classes
+    severity: error
+    scope: diff
+    message: |
+      Class '{qualified_name}' was removed - a breaking change for anything
+      importing it.

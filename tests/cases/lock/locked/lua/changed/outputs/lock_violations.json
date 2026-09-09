@@ -1,0 +1,6 @@
+[
+  {
+    "kind": "changed",
+    "target": "billing.Invoice.formatted"
+  }
+]

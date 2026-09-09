@@ -1,0 +1,105 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xmi:XMI xmlns:xmi="http://www.omg.org/spec/XMI/20110701" xmlns:uml="http://www.omg.org/spec/UML/20110701" xmlns:cdec="http://code-constraints/ext/1" xmi:version="2.1">
+  <uml:Model xmi:id="model-root" name="RootModel" cdec:status="unchanged" cdec:sourceLanguage="odin">
+    <packagedElement xmi:type="uml:Package" xmi:id="package-2cc362579ce51579" name="catalog" cdec:qualifiedName="catalog" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-0c37de88c5fee8b7" name="Author" cdec:qualifiedName="catalog.Author" cdec:kind="struct" cdec:status="unchanged" cdec:file="catalog/book.odin" cdec:startLine="4" cdec:endLine="7">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;catalog&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="string"/>
+        <ownedAttribute xmi:type="uml:Property" name="name" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="country" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-53ff00af784db5d2" name="Book" cdec:qualifiedName="catalog.Book" cdec:kind="struct" cdec:status="unchanged" cdec:file="catalog/book.odin" cdec:startLine="10" cdec:endLine="14">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;catalog&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="string"/>
+        <cdec:dependency type="f64"/>
+        <cdec:dependency type="Author"/>
+        <ownedAttribute xmi:type="uml:Property" name="title" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="price" visibility="public" cdec:type="f64" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="author" visibility="public" cdec:type="Author" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="display_name" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+    <packagedElement xmi:type="uml:Package" xmi:id="package-d3163cb1434decb9" name="orders" cdec:qualifiedName="orders" cdec:status="unchanged">
+      <packagedElement xmi:type="uml:Class" xmi:id="class-d0533a1391dc6b54" name="Receipt" cdec:qualifiedName="orders.Receipt" cdec:kind="struct" cdec:status="unchanged" cdec:file="orders/billing.odin" cdec:startLine="40" cdec:endLine="43">
+        <cdec:rule name="immutable"/>
+        <cdec:rule name="sealed"/>
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;orders&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="f64"/>
+        <cdec:dependency type="int"/>
+        <ownedAttribute xmi:type="uml:Property" name="total" visibility="public" cdec:type="f64" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="lines" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="formatted" visibility="public" cdec:status="unchanged">
+          <cdec:rule name="locked">
+            <cdec:kwarg key="reason" value="&quot;receipt wording is contractual; finance signed off on it&quot;"/>
+          </cdec:rule>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-9312dcf0adef004d" name="AuditEntry" cdec:qualifiedName="orders.AuditEntry" cdec:kind="struct" cdec:status="unchanged" cdec:file="orders/billing.odin" cdec:startLine="57" cdec:endLine="59">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;orders&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="string"/>
+        <ownedAttribute xmi:type="uml:Property" name="action" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-93950a9f8f772439" name="ReceiptFactory" cdec:qualifiedName="orders.ReceiptFactory" cdec:kind="struct" cdec:status="unchanged" cdec:file="orders/billing.odin" cdec:startLine="63" cdec:endLine="65">
+        <cdec:rule name="factory">
+          <cdec:kwarg key="creates" value="[&quot;Receipt&quot;]"/>
+        </cdec:rule>
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;orders&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="int"/>
+        <cdec:dependency type="Receipt"/>
+        <ownedAttribute xmi:type="uml:Property" name="issued" visibility="public" cdec:type="int" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="for_cart" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="cart" direction="in" cdec:type="^Cart"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="Receipt"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-852b253a735df78b" name="CheckoutService" cdec:qualifiedName="orders.CheckoutService" cdec:kind="struct" cdec:status="unchanged" cdec:file="orders/billing.odin" cdec:startLine="74" cdec:endLine="76">
+        <cdec:rule name="no-instantiation">
+          <cdec:kwarg key="allow" value="[&quot;AuditEntry&quot;]"/>
+        </cdec:rule>
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;orders&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="ReceiptFactory"/>
+        <cdec:dependency type="AuditEntry"/>
+        <cdec:dependency type="Receipt"/>
+        <ownedAttribute xmi:type="uml:Property" name="receipts" visibility="public" cdec:type="ReceiptFactory" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="summarize" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="cart" direction="in" cdec:type="^Cart"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="string"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="quick_receipt" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="cart" direction="in" cdec:type="^Cart"/>
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="Receipt"/>
+        </ownedOperation>
+      </packagedElement>
+      <packagedElement xmi:type="uml:Class" xmi:id="class-9762ef082cf9b2f4" name="Cart" cdec:qualifiedName="orders.Cart" cdec:kind="struct" cdec:status="unchanged" cdec:file="orders/cart.odin" cdec:startLine="6" cdec:endLine="9">
+        <cdec:rule name="layer">
+          <cdec:arg value="&quot;orders&quot;"/>
+        </cdec:rule>
+        <cdec:dependency type="catalog.Book"/>
+        <cdec:dependency type="string"/>
+        <ownedAttribute xmi:type="uml:Property" name="items" visibility="public" cdec:type="[dynamic]catalog.Book" cdec:status="unchanged"/>
+        <ownedAttribute xmi:type="uml:Property" name="owner" visibility="public" cdec:type="string" cdec:status="unchanged"/>
+        <ownedOperation xmi:type="uml:Operation" name="cart_total" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="return" direction="return" cdec:type="f64"/>
+        </ownedOperation>
+        <ownedOperation xmi:type="uml:Operation" name="add_item" visibility="public" cdec:status="unchanged">
+          <ownedParameter xmi:type="uml:Parameter" name="book" direction="in" cdec:type="catalog.Book"/>
+        </ownedOperation>
+      </packagedElement>
+    </packagedElement>
+  </uml:Model>
+</xmi:XMI>

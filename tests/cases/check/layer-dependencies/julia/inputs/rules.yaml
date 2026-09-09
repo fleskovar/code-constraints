@@ -1,0 +1,12 @@
+rules:
+  - id: layering
+    type: layer-dependencies
+    severity: error
+    scope: snapshot
+    allow:
+      application: [domain]
+      domain: []
+      infrastructure: [domain]
+    message: |
+      Layering violation: '{source}' ({source_layer}) references '{target}'
+      ({target_layer}).

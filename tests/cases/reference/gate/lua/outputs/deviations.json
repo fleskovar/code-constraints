@@ -1,0 +1,26 @@
+[
+  {
+    "category": "attribute-added",
+    "element": "catalog.Book",
+    "member": "isbn:"
+  },
+  {
+    "category": "operation-signature-changed",
+    "element": "catalog.Book",
+    "member": "pages(hardback:):"
+  },
+  {
+    "category": "attribute-removed",
+    "element": "catalog.Book",
+    "member": "rating:"
+  },
+  {
+    "category": "operation-added",
+    "element": "catalog.Book",
+    "member": "reprint():"
+  },
+  {
+    "category": "class-removed",
+    "element": "catalog.Series"
+  }
+]

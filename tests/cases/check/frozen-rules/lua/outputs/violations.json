@@ -1,0 +1,14 @@
+[
+  {
+    "element": "orders.Receipt",
+    "member": "class|@sealed",
+    "rule": "freeze-architectural-tags",
+    "severity": "error"
+  },
+  {
+    "element": "orders.Receipt",
+    "member": "operation:subtotal(n:):|@no-side-effects",
+    "rule": "freeze-architectural-tags",
+    "severity": "error"
+  }
+]

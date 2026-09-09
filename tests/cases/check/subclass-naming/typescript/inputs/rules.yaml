@@ -1,0 +1,12 @@
+rules:
+  - id: notifier-implementations-must-end-in-Notifier
+    type: subclass-naming
+    severity: error
+    scope: snapshot
+    base: "Notification"
+    name_pattern: ".*Notifier$"
+    ignore:
+      - "notifications.LegacyPager"
+    message: |
+      Class '{qualified_name}' inherits from `{base}` but its name ({name})
+      does not match /{pattern}/.

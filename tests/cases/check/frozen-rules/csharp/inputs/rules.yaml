@@ -1,0 +1,9 @@
+rules:
+  - id: freeze-architectural-tags
+    type: frozen-rules
+    severity: error
+    scope: diff
+    classes: ["Orders.**"]
+    message: |
+      Architectural tag drift: '{rule}' on '{member}' of '{qualified_name}'
+      was {action}.

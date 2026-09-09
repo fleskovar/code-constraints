@@ -1,0 +1,10 @@
+rules:
+  - id: no-dangling-classes
+    type: dangling-classes
+    severity: warning
+    scope: snapshot
+    entry_points:
+      - "Orders.CheckoutService"
+    framework_bases: ["BaseCommand"]
+    message: |
+      Class '{qualified_name}' has no incoming references inside this project.

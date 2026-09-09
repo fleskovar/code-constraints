@@ -1,0 +1,8 @@
+[
+  {
+    "element": "domain.Domain.Order",
+    "member": "domain->infrastructure:infrastructure.Infrastructure.SqlConnection",
+    "rule": "layering",
+    "severity": "error"
+  }
+]

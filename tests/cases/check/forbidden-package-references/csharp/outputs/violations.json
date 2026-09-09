@@ -1,0 +1,8 @@
+[
+  {
+    "element": "Catalog",
+    "member": "->Orders",
+    "rule": "catalog-is-a-leaf-package",
+    "severity": "error"
+  }
+]

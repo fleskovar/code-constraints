@@ -1,0 +1,7 @@
+[
+  {
+    "element": "Notifications.ExpressNotifier",
+    "rule": "no-new-classes",
+    "severity": "warning"
+  }
+]

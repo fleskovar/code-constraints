@@ -1,0 +1,7 @@
+[
+  {
+    "element": "Notifications.SlackHook",
+    "rule": "notifier-implementations-must-end-in-Notifier",
+    "severity": "error"
+  }
+]

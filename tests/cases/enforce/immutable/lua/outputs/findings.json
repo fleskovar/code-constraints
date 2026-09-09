@@ -1,0 +1,7 @@
+[
+  {
+    "detail": "apply_discount.total",
+    "element": "orders.Receipt",
+    "rule": "immutable"
+  }
+]

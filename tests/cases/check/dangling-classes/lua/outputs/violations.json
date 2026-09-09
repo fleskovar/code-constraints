@@ -1,0 +1,7 @@
+[
+  {
+    "element": "orders.LegacyPriceTable",
+    "rule": "no-dangling-classes",
+    "severity": "warning"
+  }
+]

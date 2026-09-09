@@ -1,0 +1,7 @@
+rules:
+  - id: no-cyclic-package-dependencies
+    type: no-cyclic-package-dependencies
+    severity: error
+    scope: snapshot
+    message: |
+      Cyclic package dependency: {cycle}.

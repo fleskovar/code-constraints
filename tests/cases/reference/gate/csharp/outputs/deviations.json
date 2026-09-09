@@ -1,0 +1,21 @@
+[
+  {
+    "category": "operation-modifier-changed",
+    "element": "Catalog.Author",
+    "member": "Books():List<Book>"
+  },
+  {
+    "category": "operation-modifier-changed",
+    "element": "Catalog.Author",
+    "member": "Format():string"
+  },
+  {
+    "category": "attribute-added",
+    "element": "Catalog.Author",
+    "member": "TestVar:float"
+  },
+  {
+    "category": "class-kind-changed",
+    "element": "Catalog.Book"
+  }
+]

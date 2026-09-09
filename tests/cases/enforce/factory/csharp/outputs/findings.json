@@ -1,0 +1,7 @@
+[
+  {
+    "detail": "QuickReceipt->Receipt",
+    "element": "Orders.CheckoutService",
+    "rule": "factory"
+  }
+]

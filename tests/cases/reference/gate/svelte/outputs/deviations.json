@@ -1,0 +1,22 @@
+[
+  {
+    "category": "attribute-removed",
+    "element": "lib.Cart",
+    "member": "currency:string"
+  },
+  {
+    "category": "attribute-added",
+    "element": "lib.Cart",
+    "member": "taxRate:number"
+  },
+  {
+    "category": "operation-signature-changed",
+    "element": "lib.Cart",
+    "member": "total(precision:number):number"
+  },
+  {
+    "category": "attribute-added",
+    "element": "routes.CartView",
+    "member": "count:number"
+  }
+]
