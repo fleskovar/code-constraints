@@ -5,27 +5,68 @@ name: Publish to PyPI
 # publisher once at https://pypi.org/manage/project/code-constraints/settings/publishing/
 #   owner: fleskovar   repo: code-constraints
 #   workflow: publish.yml   environment: pypi
+#
+# `ci.yml` runs on branches and pull requests, not on tags, so this workflow
+# runs the test suite itself. A PyPI version cannot be re-uploaded, so every
+# gate has to pass before the upload step, not after.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: build distributions
+  test:
+    name: tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
-      - name: Build wheel + sdist
+      - name: Install
         run: |
-          python -m pip install --upgrade pip build twine
-          python -m build
-          python -m twine check dist/*
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,mcp]"
+
+      - name: Tests
+        run: python -m pytest -q
+
+  build:
+    name: build distributions
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag that disagrees with pyproject.toml publishes the wrong version
+      # under the right name, and it cannot be taken back.
+      - name: Check the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(python3 -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "tag=$tag  pyproject=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match pyproject version $pkg"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/build-dist
 
       - uses: actions/upload-artifact@v4
         with:
