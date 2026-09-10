@@ -1,4 +1,4 @@
-"""Apply review decisions to the waiver store.
+"""Apply review decisions to the exceptions ledger.
 
 Kept apart from the CLI so the rules about what may be waived — and what must
 be refused — are testable on their own and identical whether the decision
@@ -86,10 +86,10 @@ def remove_keys(store: WaiverStore, keys: Iterable[str]) -> ApplyResult:
 
 
 def prune(store: WaiverStore, collected: Collected) -> list[Waiver]:
-    """Drop waivers whose issue no longer occurs, and return them.
+    """Drop exceptions whose issue no longer occurs, and return them.
 
-    Only prunes engines that actually ran this time round: a waiver is not
-    stale just because the engine that would have reported it was skipped.
+    Only prunes engines that actually ran this time round: an exception is not
+    stale just because the rule that would have reported it was skipped.
     """
     engines_ran = collected.engines_ran
     live = {issue.key for issue in collected.issues}

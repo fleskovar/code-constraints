@@ -287,7 +287,7 @@ def test_lock_issues_refuse_to_become_waivers() -> None:
     with pytest.raises(NotWaivable) as exc:
         issue.to_waiver()
     # The refusal has to name the way forward, or the workflow dead-ends here.
-    assert "cdec lock set" in str(exc.value)
+    assert "cdec check --automatic-exceptions locks --force" in str(exc.value)
 
 
 def test_check_and_enforce_issues_are_waivable() -> None:

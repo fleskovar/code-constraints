@@ -132,7 +132,7 @@ def _onboard(path: Path) -> bool:
 # ---------- main menu ----------
 
 _LAUNCH = "🌐  Launch the web app (interactive diagrams)"
-_CHECKS = "🔍  Run architectural checks (cdec check + enforce)"
+_CHECKS = "🔍  Run the architectural checks (cdec check)"
 _TESTS = "🧪  Run the project test suite"
 _CI = "📦  Generate CI/CD scripts (Windows + Linux)"
 _UPDATE = "🔄  Update project assets (agents, shims)"
@@ -171,7 +171,7 @@ def _main_menu(path: Path) -> None:
 
 
 def _resolve_language(path: Path) -> str:
-    """Prefer the language recorded in .cdec/config.yaml, fall back to detection,
+    """Prefer the language recorded in .cdec/rules.yaml, fall back to detection,
     then to 'python'."""
     try:
         from code_constraints.lint.config import load_project_config
@@ -199,18 +199,19 @@ def _launch_web(path: Path, lang: str) -> None:
 
 
 def _run_checks(path: Path, lang: str) -> None:
-    console.print("[bold]Running architectural drift check…[/]")
+    """One command, every rule. `cdec check` is the whole gate."""
+    console.print("[bold]Running the architectural checks…[/]")
     _run(
         [sys.executable, "-m", "code_constraints.cli", "check", "--config", ".cdec", "--source", "."],
         path,
     )
-    console.print("\n[bold]Running conformance enforcement…[/]")
-    _run([sys.executable, "-m", "code_constraints.cli", "enforce", ".", "--lang", lang], path)
     console.print(
         "\n[dim]To accept a reported issue, quote its key: "
-        "[bold]cdec baseline allow V-XXXXXXXX --reason \"why\"[/]. "
-        "For a batch: [bold]cdec baseline review --out review.txt[/], mark lines, "
-        "[bold]cdec baseline patch --file review.txt[/].[/]"
+        "[bold]cdec exceptions allow V-XXXXXXXX --reason \"why\"[/]. "
+        "For a batch: [bold]cdec check --log-out check.log[/], mark lines [ALLOW], "
+        "[bold]cdec exceptions patch --file check.log[/].\n"
+        "To grandfather everything on an existing codebase: "
+        "[bold]cdec check --automatic-exceptions rules[/].[/]"
     )
 
 
@@ -241,8 +242,8 @@ def _generate_ci(path: Path, lang: str) -> None:
     for p in written:
         console.print(f"[green]✓[/] wrote [bold]{p.name}[/]")
     console.print(
-        "[dim]Both scripts run `cdec check` then `cdec enforce` and exit non-zero "
-        "on any violation — drop them into your CI pipeline.[/]"
+        "[dim]Both scripts run `cdec check` and exit non-zero on any violation "
+        "— drop them into your CI pipeline.[/]"
     )
 
 

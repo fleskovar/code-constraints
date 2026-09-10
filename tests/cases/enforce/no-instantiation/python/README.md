@@ -4,7 +4,7 @@
 
 `@no_instantiation(allow=[…])` is the constraint behind "this orchestrator wires collaborators together; it does not build them". This case pins that the allow-list is consulted by **short type name**, and that everything not on it fires.
 
-**Engine:** B — conformance — `cdec enforce`  
+**Engine:** B — conformance — the `tag-conformance` rule  
 **Constraint:** [`no-instantiation`](../../../../../docs/RULES_CATALOGUE.md#no-instantiation)  
 **Language:** Python  
 **Runner:** `tests/case_runner.py::_run_enforce`
@@ -51,7 +51,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec enforce` **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
+1. The `tag-conformance` rule **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
 2. Construction detection in this language is **heuristic**. There is no type resolution at parse time, so a "construction" is *a call whose callee is a known project class, or whose name is Capitalised*. `Decimal("1.00")` and `Path(p)` would be flagged too — `allow=[…]` is the documented escape hatch and you will need it.
 3. Applied to a **class** the tag covers every method in it. Applied to a method it overrides the class-level setting for that method only.
 4. `allow:` holds **short type names**. A construction whose type is on the list is permitted; omit `allow` entirely for "nothing at all".

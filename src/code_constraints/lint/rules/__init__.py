@@ -40,4 +40,11 @@ from code_constraints.lint.rules import (  # noqa: E402, F401
     subclass_naming,
     cyclic_package_dependencies,
     max_class_fanout,
+    # Adapters for the three decoupled engines that used to be separate
+    # commands. They import their engine lazily and translate its results into
+    # `Violation`s, so the engines stay independent packages while the user sees
+    # one file of rules and one `cdec check`.
+    tag_conformance,
+    implementation_locks,
+    reference_architecture,
 )

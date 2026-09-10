@@ -8,11 +8,9 @@ from code_constraints.reference.compare import Deviation
 def format_human(deviations: list[Deviation]) -> str:
     """Render deviations as a readable, CI-friendly report, grouped by class."""
     if not deviations:
-        return "cdec reference test: no deviations -- the codebase matches the reference.\n"
+        return "no deviations -- the codebase matches the reference.\n"
 
-    lines = [
-        f"cdec reference test: {len(deviations)} deviation(s) from the reference:",
-    ]
+    lines = [f"{len(deviations)} deviation(s) from the reference:"]
     current_qn: str | None = None
     for d in sorted(deviations, key=Deviation.sort_key):
         if d.qualified_name != current_qn:

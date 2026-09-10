@@ -14,7 +14,7 @@ cdec check
 The committed `reference.xmi` is a snapshot of the current fixture, so a
 plain `cdec check` should report no diff-scope violations. Try adding a
 new class to `animals/` or `store/` and re-running — the `no-new-classes`
-rule will flag it. Run `cdec check --update-reference` to accept the
+rule will flag it. Run `cdec check --automatic-exceptions reference` to accept the
 drift.
 
 `rules.yaml` deliberately includes one example of every supported rule

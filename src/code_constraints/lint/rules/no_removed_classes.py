@@ -11,6 +11,8 @@ from code_constraints.lint.rules.base import Rule, RuleContext, Violation, chang
 
 @register("no-removed-classes")
 class NoRemovedClasses(Rule):
+    default_scope = "diff"
+
     def check(self, ctx: RuleContext) -> Iterable[Violation]:
         if not ctx.has_diff:
             return

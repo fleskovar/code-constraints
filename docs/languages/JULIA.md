@@ -5,7 +5,7 @@
 > intentional violation. Every command below is copy-pasteable from the repository root.
 
 Julia support is complete: parser, all seven constraint tags as **real macros**, `cdec
-enforce` (Engine B) with name-based construction detection, and `cdec lock` (Engine C) with
+enforce` (`tag-conformance`) with name-based construction detection, and the `implementation-locks` rule (`implementation-locks`) with
 the `jl-ts/1` fingerprinter. Activity and sequence diagrams are not implemented for Julia.
 
 Julia is the only one of the newer languages with a first-class construct to hang a tag on,
@@ -56,7 +56,7 @@ formatted(r::Receipt)::String = "…"     # → operation `formatted` on Receipt
 ```
 
 Its qualified name is `orders.Billing.Receipt.formatted` — that is what the diagram shows,
-what `cdec lock` records, and what `cdec baseline allow` accepts. The receiver is dropped
+what the `implementation-locks` rule records, and what `cdec exceptions allow` accepts. The receiver is dropped
 from the rendered signature.
 
 Both the long form and the **short form** are recognised:
@@ -164,7 +164,7 @@ struct — an unrelated wrapper never hides a type from the model.
 
 ---
 
-## 4. Engine A — architectural drift (`cdec check`)
+## 4. the model rules — architectural drift (`cdec check`)
 
 ```bash
 cdec check --config examples/julia_demo/.cdec --source examples/julia_demo
@@ -190,14 +190,14 @@ Remove `@sealed` from the `Receipt` declaration and re-run:
 
 ---
 
-## 5. Engine B — implementation conformance (`cdec enforce`)
+## 5. `tag-conformance` — implementation conformance (the `tag-conformance` rule)
 
 ```bash
-cdec enforce examples/julia_demo --lang julia
+cdec check --config examples/julia_demo/.cdec --source examples/julia_demo
 ```
 
 ```
-cdec enforce: 2 conformance violation(s):
+[tags-must-be-honoured] (error) — 2 finding(s):
   - [F-DAB2D2F6] [factory] orders/Billing.jl:81: 'orders.Billing.CheckoutService.quick_receipt'
       constructs 'Receipt' outside its designated factory (ReceiptFactory).
   - [F-92E7A54D] [no-instantiation] orders/Billing.jl:81: 'orders.Billing.CheckoutService.quick_receipt'
@@ -242,21 +242,21 @@ end
 ```
 
 ```bash
-cdec baseline allow F-92E7A54D --config examples/julia_demo/.cdec --reason "legacy path, ticket #142"
+cdec exceptions allow F-92E7A54D --config examples/julia_demo/.cdec --reason "legacy path, ticket #142"
 ```
 
 ---
 
-## 6. Engine C — implementation freeze (`cdec lock`)
+## 6. `implementation-locks` — implementation freeze (the `implementation-locks` rule)
 
 ```bash
-cdec lock list examples/julia_demo --lang julia --config examples/julia_demo/.cdec
+cdec locks examples/julia_demo --lang julia --config examples/julia_demo/.cdec
 # ok   orders.Billing.Receipt.formatted  method  (tag)  orders/Billing.jl:43
 ```
 
 ```bash
-cdec lock set   examples/julia_demo --lang julia --config examples/julia_demo/.cdec --reason "…"
-cdec lock check examples/julia_demo --lang julia --config examples/julia_demo/.cdec
+cdec check --automatic-exceptions locks   examples/julia_demo --lang julia --config examples/julia_demo/.cdec --reason "…"
+cdec check examples/julia_demo --lang julia --config examples/julia_demo/.cdec
 ```
 
 Two Julia-specific behaviours:
@@ -279,7 +279,7 @@ digest untouched. Non-rule macros are folded back in separately, so:
 Re-baselining stays privileged:
 
 ```bash
-cdec lock set examples/julia_demo --lang julia \
+cdec check --automatic-exceptions locks examples/julia_demo --lang julia \
   --target orders.Billing.Receipt.formatted --force --reason "approved"
 ```
 
@@ -307,8 +307,7 @@ it is a free function as far as the model is concerned.
 ## 8. CI
 
 ```yaml
-- run: cdec check   --config .cdec --source .   # Engine A + C
-- run: cdec enforce . --lang julia              # Engine B
+- run: cdec check   --config .cdec --source .   # the model rules + C
 ```
 
 See [Tutorial Part 9](../TUTORIAL.md#part-9--wiring-up-cicd) for full workflows.

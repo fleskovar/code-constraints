@@ -4,7 +4,7 @@
 
 `@sealed` is the one Engine B rule that needs **no body analysis**: it compares the tag against every other class's base list, cross-file, so it works the moment a language has a parser. This case pins that a subclass fires and that composition — the sanctioned alternative — does not.
 
-**Engine:** B — conformance — `cdec enforce`  
+**Engine:** B — conformance — the `tag-conformance` rule  
 **Constraint:** [`sealed`](../../../../../docs/RULES_CATALOGUE.md#sealed)  
 **Language:** C#  
 **Runner:** `tests/case_runner.py::_run_enforce`
@@ -52,7 +52,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec enforce` **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
+1. The `tag-conformance` rule **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
 2. `sealed` is evaluated **structurally**, against the parsed `Project`, in `enforce/engine.py::_check_sealed` — not by a per-language body analyzer.
 3. Matching is by **short name**. Parsers give textual base names rather than resolved qualified names, so a sealed `Receipt` protects against any base spelled `Receipt` or `x.y.Receipt`.
 4. A class never counts as subclassing itself (`short != cls.name`).
@@ -76,7 +76,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 sealed type is doing exactly what it was asked to.
 
 Note that no method body was read to reach this answer. `sealed` is the reason
-`cdec enforce` is useful on a language before anyone writes a body analyzer for it.
+Tag conformance is useful on a language before anyone writes a body analyzer for it.
 
 ### Elements that produce nothing
 

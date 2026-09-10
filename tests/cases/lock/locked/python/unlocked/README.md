@@ -2,9 +2,9 @@
 
 ## What this proves
 
-**The ledger is the authority, not the source.** Removing the `@locked` tag from an element that is already in `.cdec/locks.yaml` is reported as `unlocked` — otherwise escaping a lock would be a one-line edit and the whole feature would be theatre.
+**The ledger is the authority, not the source.** Removing the `@locked` tag from an element that is already in `the `locks:` section of .cdec/rules.yaml` is reported as `unlocked` — otherwise escaping a lock would be a one-line edit and the whole feature would be theatre.
 
-**Engine:** C — freeze — `cdec lock check`  
+**Engine:** C — freeze — the `implementation-locks` rule  
 **Constraint:** [`locked`](../../../../../../docs/RULES_CATALOGUE.md#locked)  
 **Language:** Python  
 **Runner:** `tests/case_runner.py::_run_lock`
@@ -48,7 +48,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec lock` answers a narrower question than the other engines: not "did intent drift" or "does the code obey the tag", but **did this body change at all**.
+1. The `implementation-locks` rule answers a narrower question than the other rules: not "did intent drift" or "does the code obey the tag", but **did this body change at all**.
 2. A lock is an **AST identity, not a line range**. The digest is taken over a normalised syntax tree, so position is irrelevant.
 3. Comments are dropped, and docstrings too unless `lock.include_docstrings` is set.
 4. The `@locked` tag itself is stripped **recursively** before digesting — including a method-level lock nested inside a locked class. Applying or removing a lock can therefore never change the digest it records.
@@ -73,7 +73,7 @@ is the authority, that is a violation in its own right.
 **Step 3 — the escape that is not one.** The fix is *not* to delete the ledger entry by
 hand; it is `cdec lock set --target orders.Receipt.formatted --force`, which prunes the entry and leaves
 a reviewable diff. `update_locks` freely *adds* locks without `--force`, but will not
-prune or re-baseline without it — so `cdec lock set` stays safe for anyone to run and can
+prune or re-baseline without it — so `cdec check --automatic-exceptions locks` stays safe for anyone to run and can
 never erase evidence.
 
 > **Glob-locked entries are exempt from this check**, because they were never declared by

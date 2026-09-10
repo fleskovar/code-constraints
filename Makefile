@@ -191,23 +191,21 @@ serve: ## Start the web server (HOST/PORT overridable)
 	fi
 	$(CDEC) serve --host $(HOST) --port $(PORT)
 
-# Every language with rule-tag support ships a demo with the same shape: a tagged
-# billing slice that passes `check`, a committed lock, and one seeded `enforce`
-# violation. See docs/languages/ for a guide per language.
+# Every language with rule-tag support ships a demo with the same shape: a
+# tagged billing slice, a committed lock, and one seeded conformance violation.
+# See docs/languages/ for a guide per language.
 DEMO_LANGS := python csharp odin lua julia
 
-demo: ## Run all three engines against the bundled example projects
-	@echo "=== Engine A: architectural drift (cdec check) + Engine C: locks ==="
+demo: ## Run `cdec check` against the bundled example projects
+	@echo "Every rule in .cdec/rules.yaml runs in one command, so this is the"
+	@echo "whole gate: architectural rules, tag conformance, locks and the"
+	@echo "reference check together."
+	@echo "(each demo carries one seeded violation - non-zero exit is expected)"
+	@echo
 	@for lang in $(DEMO_LANGS); do \
 	  echo "--- $$lang"; \
 	  $(CDEC) check --config examples/$${lang}_demo/.cdec --source examples/$${lang}_demo || true; \
-	done
-	@echo
-	@echo "=== Engine B: implementation conformance (cdec enforce) ==="
-	@echo "(each demo carries one seeded violation — non-zero exit is expected)"
-	@for lang in $(DEMO_LANGS); do \
-	  echo "--- $$lang"; \
-	  $(CDEC) enforce examples/$${lang}_demo --lang $$lang || true; \
+	  echo; \
 	done
 
 # ---------------------------------------------------------------------------

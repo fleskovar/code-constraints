@@ -1,17 +1,19 @@
-"""Result types for the `cdec lock` implementation-freeze engine (Engine C).
+"""Result types for the implementation-freeze engine (Engine C).
 
 Deliberately separate from `code_constraints.lint.Violation` and
 `code_constraints.enforce.Finding`: the
 three engines are decoupled by design and share only the rule *catalog*.
 
-  * `cdec check`   (Engine A) — did the architectural *intent* drift?
-  * `cdec enforce` (Engine B) — does the code *obey* the tags right now?
-  * `cdec lock`    (Engine C) — did a frozen implementation *change at all*?
+  * Engine A (configured rules)  — did the architectural *intent* drift?
+  * Engine B (tag conformance)   — does the code *obey* the tags right now?
+  * Engine C (locks)             — did a frozen implementation *change at all*?
 
-Engine C is the only one that cares about the exact contents of a body. It
-compares an AST-derived digest against the digest recorded in `.cdec/locks.yaml`,
-so reformatting, comment edits, and moving the element around a file never trip
-a lock, while any semantic edit does.
+All three run inside `cdec check`, as rule types in `.cdec/rules.yaml`; they
+share only the rule catalog. Engine C is the only one that cares about the exact
+contents of a body. It compares an AST-derived digest against the digest
+recorded in the `locks:` section of `rules.yaml`, so reformatting, comment edits
+and moving the element around a file never trip a lock, while any semantic edit
+does.
 """
 
 from __future__ import annotations
@@ -71,7 +73,7 @@ class LockTarget:
 
 @dataclass
 class LockEntry:
-    """One recorded lock in `.cdec/locks.yaml` — the approved digest."""
+    """One recorded lock in the `locks:` section of `.cdec/rules.yaml`."""
 
     target: str
     kind: str
@@ -81,7 +83,7 @@ class LockEntry:
     locked_at: str = ""
     locked_by: str = ""
     reason: str = ""
-    # True when the lock came from a `lock.targets:` glob rather than a tag.
+    # True when the lock came from a rule `targets:` glob rather than a tag.
     # Glob-locked entries are exempt from the "tag was removed" check.
     via_pattern: bool = False
 
@@ -104,8 +106,9 @@ class LockViolation:
     def key(self) -> str:
         """Stable review key (`L-…`) — see `code_constraints.core.keys`.
 
-        Locks are the one thing `cdec baseline` will not waive: accepting a
-        changed implementation is `cdec lock set --force`, a privileged,
+        Locks are the one thing `cdec exceptions` will not accept: a changed
+        implementation is approved with
+        `cdec check --automatic-exceptions locks --force`, a privileged,
         reviewable act. The key exists anyway so reports are uniform and an
         agent can name the lock it means.
         """
@@ -139,10 +142,16 @@ _KIND_HEADLINE: dict[str, str] = {
 
 
 def format_report(report: LockReport) -> str:
+    """Standalone rendering of a lock report.
+
+    `cdec check` renders lock violations through the unified report instead;
+    this stays for library callers and for the MCP tools that surface the lock
+    ledger on its own.
+    """
     if report.bypassed:
         head = [
             "!" * 72,
-            "cdec lock: LOCKS BYPASSED — frozen implementations were NOT verified.",
+            "LOCKS BYPASSED — frozen implementations were NOT verified.",
         ]
         if report.bypass_reason:
             head.append(f"          reason: {report.bypass_reason}")
@@ -153,14 +162,14 @@ def format_report(report: LockReport) -> str:
         return "\n".join(head) + "\n"
     if not report.violations:
         return (
-            f"cdec lock: {report.checked} locked element(s) verified, no changes.\n"
+            f"{report.checked} locked element(s) verified, no changes.\n"
         )
 
     by_kind: dict[str, list[LockViolation]] = {}
     for v in report.violations:
         by_kind.setdefault(v.kind, []).append(v)
 
-    lines = [f"cdec lock: {len(report.violations)} lock violation(s):"]
+    lines = [f"{len(report.violations)} lock violation(s):"]
     for kind in sorted(by_kind):
         lines.append(f"[{kind}] {_KIND_HEADLINE.get(kind, '')}")
         for v in sorted(by_kind[kind], key=lambda x: x.target):
@@ -171,7 +180,7 @@ def format_report(report: LockReport) -> str:
         lines.append("")
     lines.append(
         "A locked implementation may only change with a lead's approval:\n"
-        "  cdec lock set --target <name> --force --reason \"<why>\"\n"
+        "  cdec check --automatic-exceptions locks --force\n"
         "To ship without re-baselining (audited, discouraged):\n"
         "  cdec check --bypass-locks --bypass-reason \"<why>\""
     )

@@ -23,8 +23,8 @@ cdec check
   for the `Admin`, `Order`, and concrete-notifier entry points that
   application bootstrap code is expected to wire up.
 - **Stability.** `INotifier`'s operations are locked — adding or
-  removing methods requires a deliberate `--update-baseline` /
-  `--update-reference` pass.
+  removing methods requires a deliberate `--automatic-exceptions rules` /
+  `--automatic-exceptions reference` pass.
 
 ## Failure messages
 
@@ -45,4 +45,4 @@ Edit any file in this folder and re-run `cdec check`. For example:
   `catalog-is-a-leaf-package` rule fails.
 - Add a method to `INotifier` → `lock-inotifier` errors until you
   intentionally re-snapshot the reference with
-  `cdec check --update-reference`.
+  `cdec check --automatic-exceptions reference`.

@@ -4,7 +4,7 @@
 
 The mirror of the reformatting case: **any** semantic edit to a frozen body moves the digest, however small. One character of a string literal is enough. Together the two cases bracket the guarantee — cosmetic in, semantic out.
 
-**Engine:** C — freeze — `cdec lock check`  
+**Engine:** C — freeze — the `implementation-locks` rule  
 **Constraint:** [`locked`](../../../../../../docs/RULES_CATALOGUE.md#locked)  
 **Language:** C#  
 **Runner:** `tests/case_runner.py::_run_lock`
@@ -49,7 +49,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec lock` answers a narrower question than the other engines: not "did intent drift" or "does the code obey the tag", but **did this body change at all**.
+1. The `implementation-locks` rule answers a narrower question than the other rules: not "did intent drift" or "does the code obey the tag", but **did this body change at all**.
 2. A lock is an **AST identity, not a line range**. The digest is taken over a normalised syntax tree, so position is irrelevant.
 3. Comments are dropped, and docstrings too unless `lock.include_docstrings` is set.
 4. The `@locked` tag itself is stripped **recursively** before digesting — including a method-level lock nested inside a locked class. Applying or removing a lock can therefore never change the digest it records.
@@ -71,11 +71,11 @@ also carries the lock's `reason` and `locked_by`, and prints the escalation path
 
 ```
 A locked implementation may only change with a lead's approval:
-  cdec lock set --target <name> --force --reason "<why>"
+  cdec check --automatic-exceptions locks --force
 ```
 
 That is the whole design. A junior developer or an agent *can* change locked code — they
-just cannot make CI green without a lead approving a visible diff on `.cdec/locks.yaml`.
+just cannot make CI green without a lead approving a visible diff on `the `locks:` section of .cdec/rules.yaml`.
 Put that file behind CODEOWNERS and re-baselining always leaves a trail.
 
 **Step 4 — note what is NOT in the baseline.** No digest, no `locked_at`, no `locked_by`.

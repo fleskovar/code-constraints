@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 from urllib.parse import quote
 
 import typer
@@ -20,12 +19,12 @@ from code_constraints.core.dot import (
     emit_package_diagram,
     emit_sequence_diagram,
 )
+from code_constraints.core.model import SUPPORTED_LANGUAGES, SourceLanguage
 from code_constraints.core.model_io import UnsupportedModelFormat, load_model, save_model
 from code_constraints.core.render import GraphvizNotFound, render_svg
 from code_constraints.core.xmi_writer import write_project
 from code_constraints.lint.baseline import load_baseline, write_baseline
 from code_constraints.lint.config import (
-    BASELINE_FILENAME,
     REFERENCE_FILENAME,
     ConfigError,
     load_project_config,
@@ -35,17 +34,28 @@ from code_constraints.lint.engine import run_checks
 from code_constraints.lint.rules.base import Severity
 
 if TYPE_CHECKING:
-    # Annotation-only: the waiver machinery is imported lazily inside the
-    # commands that use it, so `cdec parse` doesn't pay for it.
-    from code_constraints.enforce.model import Finding
+    # Annotation-only: the review machinery and the engine internals are
+    # imported lazily inside the commands that use them, so `cdec parse`
+    # doesn't pay for any of it.
+    from collections.abc import Callable
+
+    from code_constraints.lint.config import LoadedRules
+    from code_constraints.lint.engine import SourceContext
+    from code_constraints.lint.report import Report
+    from code_constraints.lint.rules.base import RuleContext
     from code_constraints.waivers import ApplyResult, Collected, Issue, WaiverStore
+
+_LANG_HELP = "python | csharp | typescript | svelte | odin | lua | julia"
 
 app = typer.Typer(
     help=(
         "code-constraints (cdec) — enforce architectural and implementation "
-        "constraints on a codebase. Model it (parse/render/diff), then gate it: "
-        "`check` for architectural drift, `enforce` for implementation "
-        "conformance, `lock` for implementation freeze."
+        "constraints on a codebase. "
+        "Model it with parse / render / diff. Gate it with `cdec check`, which "
+        "runs every rule in .cdec/rules.yaml — architectural rules, source-tag "
+        "conformance, implementation locks and the reference-architecture gate "
+        "alike. Keep it moving with `cdec exceptions`, which records the "
+        "violations you accept and why."
     )
 )
 
@@ -206,9 +216,41 @@ def init(
         Path("."), "--source", help="Source tree parsed by `cdec check`."
     ),
     force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
+    migrate: bool = typer.Option(
+        False, "--migrate",
+        help="Fold an existing config.yaml / baseline.yaml / locks.yaml into "
+             "rules.yaml and delete them, instead of scaffolding.",
+    ),
 ) -> None:
-    """Scaffold a `.cdec/` folder with config, rule templates, and a reference XMI."""
-    from code_constraints.cli.scaffold import SUPPORTED_LANGS, ScaffoldError, init_cdec_config
+    """Scaffold `.cdec/rules.yaml` and a reference snapshot.
+
+    One file holds the project settings, the rules, the exceptions granted and
+    the digests of frozen implementations, so there is one thing to commit and
+    one diff to review. `--migrate` converts a project that still has the old
+    per-concern files.
+    """
+    from code_constraints.cli.scaffold import (
+        SUPPORTED_LANGS,
+        ScaffoldError,
+        init_cdec_config,
+        migrate_cdec_config,
+    )
+
+    if migrate:
+        try:
+            written, removed = migrate_cdec_config(config_dir)
+        except ScaffoldError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        if not written and not removed:
+            typer.echo(f"{config_dir}: nothing to migrate — already on rules.yaml.")
+            return
+        for path in written:
+            typer.echo(f"wrote {path}")
+        for path in removed:
+            typer.echo(f"removed {path} (its content now lives in rules.yaml)")
+        typer.echo("Review the diff, then commit .cdec/rules.yaml.")
+        return
 
     if lang not in SUPPORTED_LANGS:
         raise typer.BadParameter(f"unsupported language: {lang}")
@@ -307,123 +349,124 @@ def update(
     typer.echo(f"\ncode-constraints updated at {repo_root}")
 
 
+AUTO_ACCEPT_CHOICES = ("rules", "locks", "reference", "all")
+
+
 @app.command()
 def check(
     config_dir: Path = typer.Option(
-        Path(".cdec"), "--config", help="`.cdec/` folder containing config + rules."
-    ),
-    reference: Optional[Path] = typer.Option(
-        None, "--reference", help="Override baseline reference XMI."
-    ),
-    base_ref: Optional[str] = typer.Option(
-        None, "--base-ref", help="Git ref to use as baseline (parsed live)."
+        Path(".cdec"), "--config", help="`.cdec/` folder holding rules.yaml."
     ),
     source: Optional[Path] = typer.Option(
-        None, "--source", help="Override source tree from config."
+        None, "--source", help="Override the source tree from rules.yaml."
     ),
-    update_reference: bool = typer.Option(
-        False, "--update-reference", help="Re-snapshot reference.xmi from source and exit."
+    lang: Optional[str] = typer.Option(
+        None, "--lang", help="Override the language from rules.yaml."
     ),
-    update_baseline_flag: bool = typer.Option(
-        False, "--update-baseline", help="Record current violations into baseline.yaml and exit."
+    base_ref: Optional[str] = typer.Option(
+        None, "--base-ref", help="Git ref to use as the diff baseline (parsed live)."
     ),
+    reference: Optional[Path] = typer.Option(
+        None, "--reference", help="Override the reference model (default: .cdec/reference.xmi)."
+    ),
+    repo: Path = typer.Option(Path("."), "--repo", help="Git repo root (only used with --base-ref)."),
     format: str = typer.Option("human", "--format", help="human | json"),
     json_out: Optional[Path] = typer.Option(None, "--json-out", help="Also write a JSON report."),
-    log_out: Optional[Path] = typer.Option(None, "--log-out", help="Also tee human stdout to a log file."),
+    log_out: Optional[Path] = typer.Option(None, "--log-out", help="Also tee the human report to a file."),
     fail_on: str = typer.Option("error", "--fail-on", help="error | warning | none"),
-    repo: Path = typer.Option(Path("."), "--repo", help="Git repo root (only used with --base-ref)."),
-    enforce_flag: bool = typer.Option(
-        False, "--enforce",
-        help="Also run the decoupled `cdec enforce` conformance engine (Engine B).",
+    automatic_exceptions: list[str] = typer.Option(
+        [], "--automatic-exceptions", "-A", metavar="WHAT",
+        help=(
+            "Accept the code as it stands now instead of failing on it. "
+            "rules = grandfather every current violation into `exceptions:`; "
+            "locks = record digests for newly @locked code; "
+            "reference = re-snapshot reference.xmi; "
+            "all = every one of those. Repeatable or comma-separated."
+        ),
     ),
-    no_locks: bool = typer.Option(
-        False, "--no-locks",
-        help="Skip implementation-lock verification (Engine C), which otherwise runs "
-             "whenever `.cdec/locks.yaml` has entries.",
+    force: bool = typer.Option(
+        False, "--force",
+        help="With `--automatic-exceptions locks`, also re-baseline implementations "
+             "that have CHANGED and drop released entries. This is the privileged "
+             "operation: it accepts a change to frozen code.",
     ),
     bypass_locks: bool = typer.Option(
         False, "--bypass-locks",
-        help="Run lock verification but do not fail on it. Prints an audit banner — "
-             "intended for a lead unblocking a release, not routine use.",
+        help="Report lock violations but do not fail on them. Prints an audit banner "
+             "and sets summary.bypassed in the JSON report.",
     ),
     bypass_reason: str = typer.Option(
-        "", "--bypass-reason", help="Why locks are being bypassed (recorded in output)."
+        "", "--bypass-reason", help="Why locks are being bypassed (recorded in the output)."
     ),
 ) -> None:
-    """Run architectural-lint rules against the project."""
+    """Check the project against every rule in `.cdec/rules.yaml`.
+
+    This is the whole gate. Configured architectural rules, source-tag
+    conformance, implementation locks and the reference-architecture gate are
+    all rule types in that one file, so there is one command to run, one report
+    to read, one exit code for CI, and one place to record an exception.
+    """
     if format not in ("human", "json"):
         raise typer.BadParameter(f"unknown format: {format}")
     try:
         fail_on_sev = Severity(fail_on)
     except ValueError as exc:
         raise typer.BadParameter(f"--fail-on must be error|warning|none, got {fail_on!r}") from exc
+    accept = _parse_auto_accept(automatic_exceptions)
 
-    try:
-        cfg = load_project_config(config_dir)
-    except ConfigError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
+    cfg = _load_config_cli(config_dir)
     source_path = source.resolve() if source else cfg.source
+    language = lang or cfg.language
+    if language not in SUPPORTED_LANGUAGES:
+        raise typer.BadParameter(f"unsupported language: {language}")
+    loaded = _load_rules_cli(config_dir)
+    _warn_about_legacy_files(config_dir)
 
-    if update_reference:
-        proj = _parse_project(source_path, cfg.language)
-        ref_path = reference or (config_dir / REFERENCE_FILENAME)
-        _save_model_cli(proj, ref_path)
-        typer.echo(f"wrote {ref_path}")
-        return
+    from code_constraints.lint.engine import SourceContext
 
-    # Load rules.
-    try:
-        loaded = load_rules(config_dir)
-    except ConfigError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    head_proj = _parse_project(source_path, cfg.language)
-
-    # Resolve baseline source: --base-ref wins, then --reference, then config default.
-    annotated, has_diff, base_proj = _resolve_baseline_and_diff(
-        head_proj=head_proj,
-        cfg_language=cfg.language,
+    ctx_info = SourceContext(
+        source=source_path,
+        language=language,
         config_dir=config_dir,
-        explicit_reference=reference,
-        explicit_base_ref=base_ref,
-        repo_path=repo,
-        default_reference=cfg.reference,
+        reference_path=reference or cfg.reference_path,
     )
 
-    baseline_path = config_dir / BASELINE_FILENAME
-    baseline = load_baseline(baseline_path)
-
-    if update_baseline_flag:
-        report = run_checks(
-            annotated, loaded.rules, has_diff=has_diff, baseline=None,
-            baseline_project=base_proj,
+    def run(*, filtered: bool) -> "Report":
+        """Parse, resolve the baseline, and run every rule. `filtered` applies
+        the recorded exceptions; the grandfathering pass needs the raw set."""
+        head_proj = _parse_project(source_path, language)
+        annotated, has_diff, base_proj = _resolve_baseline_and_diff(
+            head_proj=head_proj,
+            cfg_language=language,
+            config_dir=config_dir,
+            explicit_reference=reference,
+            explicit_base_ref=base_ref,
+            repo_path=repo,
+            default_reference=cfg.reference,
         )
-        write_baseline(baseline_path, report.violations)
-        note = f"wrote {baseline_path} with {len(report.violations)} violation(s)"
-        if enforce_flag:
-            # `--enforce` widened what this run checks, so it widens what
-            # "accept the current state" means too.
-            note += f" and {_record_findings(baseline_path, source_path, cfg.language)} finding(s)"
-        typer.echo(note)
+        return run_checks(
+            annotated,
+            loaded.rules,
+            has_diff=has_diff,
+            baseline=load_baseline(config_dir) if filtered else None,
+            baseline_project=base_proj,
+            source_context=ctx_info,
+            bypass_locks=bypass_locks,
+            bypass_reason=bypass_reason,
+        )
+
+    if accept:
+        _apply_automatic_exceptions(accept, loaded, ctx_info, config_dir, run, force=force)
         return
 
-    report = run_checks(
-        annotated, loaded.rules, has_diff=has_diff, baseline=baseline,
-        baseline_project=base_proj,
-    )
+    report = run(filtered=True)
 
-    # Emit output. `transcript` accumulates every engine's human text so
-    # `--log-out` produces one complete file — which is exactly the file
-    # `cdec baseline patch` expects to be handed back, marked up.
     human_text = report.to_human()
-    transcript: list[str] = [human_text]
     if format == "human":
         typer.echo(human_text, nl=False)
     else:
         import json as _json
+
         typer.echo(_json.dumps(report.to_json(), indent=2, sort_keys=True))
 
     json_target = json_out or cfg.json_out
@@ -431,150 +474,225 @@ def check(
         report.write_json(json_target)
         typer.echo(f"wrote {json_target}")
 
-    enforce_failed = False
-    if enforce_flag:
-        from code_constraints.enforce import enforce as run_enforce
-        from code_constraints.enforce import format_findings
-
-        findings = run_enforce(source_path, cfg.language)
-        findings, silenced = _filter_findings(findings, baseline.store)
-        enforce_text = format_findings(findings, suppressed=len(silenced))
-        transcript.append(enforce_text)
-        typer.echo(enforce_text, nl=False)
-        enforce_failed = bool(findings)
-
-    # Engine C — implementation locks, so a frozen implementation is enforced by
-    # the command teams already run in CI rather than needing an extra step. A
-    # project with nothing locked prints nothing; a `@locked` tag that was never
-    # baselined must still be reported, so the check runs before we know whether
-    # the project opted in.
-    lock_failed = False
-    if not no_locks and cfg.lock.enabled:
-        from code_constraints.lock import UnsupportedLockLanguage
-        from code_constraints.lock import check_locks as _check_locks
-        from code_constraints.lock import format_report as _format_lock_report
-
-        lock_ctx = _lock_context(source_path, cfg.language, config_dir, None)
-        opted_in = bool(lock_ctx.entries or lock_ctx.options.patterns)
-        try:
-            lock_report = _check_locks(
-                lock_ctx.source, lock_ctx.lang, lock_ctx.entries, lock_ctx.options,
-                bypass=bypass_locks, bypass_reason=bypass_reason,
-            )
-        except UnsupportedLockLanguage as exc:
-            # Only an error for a project that actually asked for locks.
-            if opted_in:
-                typer.echo(str(exc), err=True)
-                raise typer.Exit(code=2) from exc
-            lock_report = None
-        if lock_report is not None and (
-            lock_report.checked or lock_report.declared or lock_report.violations
-        ):
-            lock_text = _format_lock_report(lock_report)
-            transcript.append(lock_text)
-            typer.echo(lock_text, nl=False)
-            lock_failed = not lock_report.ok
-
+    # The human report is what `cdec exceptions patch` expects to be handed
+    # back, marked up — so the log is that text verbatim, whatever --format said.
     log_target = log_out or cfg.log_out
     if log_target is not None:
         log_target.parent.mkdir(parents=True, exist_ok=True)
-        log_target.write_text("".join(transcript), encoding="utf-8")
+        log_target.write_text(human_text, encoding="utf-8")
         typer.echo(f"wrote {log_target}")
 
-    if report.has_failures(fail_on_sev) or enforce_failed or lock_failed:
+    if report.has_failures(fail_on_sev):
         raise typer.Exit(code=1)
 
 
-@app.command()
-def enforce(
-    path: Path = typer.Argument(..., exists=True, file_okay=False, dir_okay=True),
-    lang: str = typer.Option(..., "--lang", help="python | csharp | typescript | svelte | odin | lua | julia"),
-    format: str = typer.Option("human", "--format", help="human | json"),
-    json_out: Optional[Path] = typer.Option(None, "--json-out", help="Also write a JSON report."),
-    config_dir: Path = typer.Option(
-        Path(".cdec"), "--config",
-        help="`.cdec/` folder whose baseline.yaml silences accepted findings.",
-    ),
-    no_baseline: bool = typer.Option(
-        False, "--no-baseline", help="Report every finding, including waived ones."
-    ),
+def _parse_auto_accept(values: list[str]) -> set[str]:
+    """Normalise `--automatic-exceptions` into the set of things to accept."""
+    out: set[str] = set()
+    for raw in values:
+        for part in str(raw).split(","):
+            item = part.strip().lower()
+            if not item:
+                continue
+            if item not in AUTO_ACCEPT_CHOICES:
+                raise typer.BadParameter(
+                    f"--automatic-exceptions must be one of "
+                    f"{', '.join(AUTO_ACCEPT_CHOICES)}; got {item!r}"
+                )
+            out.add(item)
+    if "all" in out:
+        out = {"rules", "locks", "reference"}
+    return out
+
+
+def _apply_automatic_exceptions(
+    accept: set[str],
+    loaded: "LoadedRules",
+    ctx_info: "SourceContext",
+    config_dir: Path,
+    run: "Callable[..., Report]",
+    *,
+    force: bool,
 ) -> None:
-    """Check implementation conformance to architectural-rule tags (Engine B).
+    """Record the current state as approved, instead of failing on it.
 
-    Independent of `cdec check`: this re-parses the source and inspects method
-    bodies (`no-instantiation`, `factory`, `immutable`) plus the structural
-    `sealed` rule. It never consults the reference model or the diff.
-
-    Findings accepted through `cdec baseline allow` / `patch` are silenced, so
-    a team can adopt a tag without fixing every pre-existing case first.
+    Order matters. The rules that carry a baseline of their own (the reference
+    snapshot, the lock ledger) are settled first, then the checks are re-run,
+    and only what is *still* reported gets grandfathered into `exceptions:`. Do
+    it the other way round and you would write exceptions for issues the
+    re-snapshot was about to erase.
     """
-    if format not in ("human", "json"):
-        raise typer.BadParameter(f"unknown format: {format}")
-    if lang not in (
-        "python", "csharp", "typescript", "svelte", "odin", "lua", "julia",
-    ):
-        raise typer.BadParameter(f"unsupported language: {lang}")
+    from code_constraints.lint.rules.base import RuleSkipped
 
-    from code_constraints.enforce import enforce as run_enforce
-    from code_constraints.enforce import findings_to_json, format_findings
+    ordered = (
+        ("reference", "reference-architecture"),
+        ("locks", "implementation-locks"),
+    )
+    for what, type_name in ordered:
+        if what not in accept:
+            continue
+        rules = loaded.of_type(type_name)
+        if not rules:
+            typer.echo(
+                f"--automatic-exceptions {what}: no `{type_name}` rule in rules.yaml, "
+                f"nothing to record."
+            )
+            continue
+        for rule in rules:
+            typer.echo(f"[{rule.rule_id}] recording the current state:")
+            try:
+                lines = rule.accept_current_state(_auto_accept_context(ctx_info), force=force)
+            except RuleSkipped as exc:
+                typer.echo(f"  skipped: {exc}")
+                continue
+            for line in lines:
+                typer.echo(line)
 
-    findings = run_enforce(path, lang)
-    silenced: list = []
-    if not no_baseline:
-        from code_constraints.waivers import load_waivers
-
-        findings, silenced = _filter_findings(
-            findings, load_waivers(config_dir / BASELINE_FILENAME)
+    if "rules" in accept:
+        report = run(filtered=False)
+        grandfathered = [v for v in report.violations if v.waivable]
+        path = write_baseline(config_dir, grandfathered)
+        typer.echo(
+            f"--automatic-exceptions rules: recorded {len(grandfathered)} exception(s) "
+            f"in {path}"
         )
+        refused = [v for v in report.violations if not v.waivable]
+        if refused:
+            typer.echo(
+                f"  {len(refused)} lock violation(s) were NOT grandfathered — a frozen "
+                f"implementation is accepted with "
+                f"`--automatic-exceptions locks --force`, never as an exception:"
+            )
+            for v in refused:
+                typer.echo(f"    - [{v.key()}] {v.qualified_name}")
 
-    if format == "human":
-        typer.echo(format_findings(findings, suppressed=len(silenced)), nl=False)
-    else:
-        import json as _json
-        typer.echo(_json.dumps(findings_to_json(findings), indent=2, sort_keys=True))
 
-    if json_out is not None:
-        import json as _json
-        json_out.parent.mkdir(parents=True, exist_ok=True)
-        json_out.write_text(
-            _json.dumps(findings_to_json(findings), indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        typer.echo(f"wrote {json_out}")
+def _auto_accept_context(source_context: "SourceContext") -> "RuleContext":
+    """A minimal `RuleContext` for `accept_current_state`.
 
-    if findings:
-        raise typer.Exit(code=1)
+    The baselining hooks re-read the source themselves and never look at the
+    model, so there is no reason to parse one just to hand it over.
+    """
+    from code_constraints.core.model import Project
+    from code_constraints.lint.rules.base import RuleContext
+
+    language = cast(SourceLanguage, source_context.language or "python")
+    return RuleContext(
+        project=Project(source_language=language),
+        has_diff=False,
+        source=source_context.source,
+        language=source_context.language,
+        config_dir=source_context.config_dir,
+        reference_path=source_context.reference_path,
+    )
+
+
+def _warn_about_legacy_files(config_dir: Path) -> None:
+    """Point out per-concern files that `rules.yaml` has superseded."""
+    from code_constraints.lint.config import legacy_files
+
+    stale = legacy_files(config_dir)
+    if not stale:
+        return
+    names = ", ".join(p.name for p in stale)
+    typer.echo(
+        f"note: {names} in {config_dir} are the old per-concern files. They are still "
+        f"read, but everything now lives in rules.yaml — fold them in with "
+        f"`cdec init --migrate`.",
+        err=True,
+    )
 
 
 # ---------------------------------------------------------------------------
-# `cdec baseline` — the review loop.
+# Retired commands.
+#
+# `enforce`, `lock` and `reference test` were three more gates with three more
+# reports and three more exit codes. They are rule types in `rules.yaml` now and
+# run inside `cdec check`. Typer would answer an old invocation with "No such
+# command", which tells a user nothing, so each one survives as a hidden stub
+# that says where the behaviour went.
+# ---------------------------------------------------------------------------
+
+_RETIRED = {
+    "enforce": (
+        "`cdec enforce` is now the `tag-conformance` rule type, checked by "
+        "`cdec check`.\n"
+        "Add this to .cdec/rules.yaml:\n"
+        "    - id: tags-must-be-honoured\n"
+        "      type: tag-conformance\n"
+        "      severity: error\n"
+        "then run `cdec check`."
+    ),
+    "lock": (
+        "`cdec lock` is now the `implementation-locks` rule type, checked by "
+        "`cdec check`.\n"
+        "Add this to .cdec/rules.yaml:\n"
+        "    - id: frozen-implementations\n"
+        "      type: implementation-locks\n"
+        "      severity: error\n"
+        "then:\n"
+        "    cdec check                                       # verify (was: lock check)\n"
+        "    cdec check --automatic-exceptions locks          # baseline (was: lock set)\n"
+        "    cdec check --automatic-exceptions locks --force  # re-baseline (was: --force)\n"
+        "The ledger lives in the `locks:` section of rules.yaml; "
+        "`cdec init --migrate` folds an existing .cdec/locks.yaml in."
+    ),
+}
+
+
+def _retired(name: str) -> None:
+    typer.echo(_RETIRED[name], err=True)
+    raise typer.Exit(code=2)
+
+
+_PASSTHROUGH = {"ignore_unknown_options": True, "allow_extra_args": True}
+
+
+@app.command(hidden=True, context_settings=_PASSTHROUGH)
+def enforce(ctx: typer.Context) -> None:
+    """Retired — see `cdec check` and the `tag-conformance` rule type."""
+    _retired("enforce")
+
+
+@app.command(hidden=True, context_settings=_PASSTHROUGH)
+def lock(ctx: typer.Context) -> None:
+    """Retired — see `cdec check` and the `implementation-locks` rule type."""
+    _retired("lock")
+
+
+# ---------------------------------------------------------------------------
+# `cdec exceptions` — the review loop.
 #
 # Enforcement that can only say "no" gets switched off. These commands are the
 # other half: read the report, decide which issues are acceptable, record the
-# decision (with a reason) in `.cdec/baseline.yaml`, and keep moving. Every
-# issue prints a stable key, so a decision can be quoted by a human editing a
-# text file or by an agent passing a key on the command line — the two paths
-# resolve to exactly the same operation.
+# decision (with a reason) in the `exceptions:` section of `.cdec/rules.yaml`,
+# and keep moving. Every issue prints a stable key, so a decision can be quoted
+# by a human editing a text file or by an agent passing a key on the command
+# line — the two paths resolve to exactly the same operation.
 # ---------------------------------------------------------------------------
 
-baseline_app = typer.Typer(
+exceptions_app = typer.Typer(
     help=(
-        "Review and accept known violations. `review` writes an editable report, "
-        "`patch` applies the lines you marked [ALLOW], `allow`/`remove` take keys "
-        "directly."
+        "Accept known violations, with a reason. `review` writes an editable "
+        "report, `patch` applies the lines you marked [ALLOW], `allow`/`remove` "
+        "take keys directly, `prune` drops the ones that no longer apply."
     )
 )
-app.add_typer(baseline_app, name="baseline")
+app.add_typer(exceptions_app, name="exceptions")
+# `baseline` was the old name for this group, back when the decisions lived in
+# their own file. Kept as a hidden alias so existing scripts and muscle memory
+# keep working.
+app.add_typer(exceptions_app, name="baseline", hidden=True)
 
 
-@baseline_app.command("review")
-def baseline_review(
+@exceptions_app.command("review")
+def exceptions_review(
     config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
     out: Optional[Path] = typer.Option(
         None, "--out", "-o", help="Write the review file here (default: stdout)."
     ),
     source: Optional[Path] = typer.Option(None, "--source", help="Override source tree."),
-    reference: Optional[Path] = typer.Option(None, "--reference", help="Override baseline reference XMI."),
+    reference: Optional[Path] = typer.Option(None, "--reference", help="Override the reference model."),
     base_ref: Optional[str] = typer.Option(None, "--base-ref", help="Git ref to use as baseline."),
     repo: Path = typer.Option(Path("."), "--repo", help="Git repo root (only used with --base-ref)."),
     include_waived: bool = typer.Option(
@@ -585,7 +703,7 @@ def baseline_review(
     """Write every current issue as one markable line per issue.
 
     Mark the ones you accept with `[ALLOW]` (optionally `[ALLOW: reason]`) and
-    feed the file back through `cdec baseline patch`.
+    feed the file back through `cdec exceptions patch`.
     """
     if format not in ("text", "json"):
         raise typer.BadParameter(f"unknown format: {format}")
@@ -599,7 +717,7 @@ def baseline_review(
             {
                 "issues": [_issue_to_json(i) for i in collected.issues
                            if include_waived or not i.waived],
-                "skipped": [{"engine": e, "reason": r} for e, r in collected.skipped],
+                "skipped": [{"rule": r, "reason": reason} for r, reason in collected.skipped],
             },
             indent=2,
             sort_keys=True,
@@ -610,13 +728,13 @@ def baseline_review(
     from code_constraints.waivers import render_review
 
     text = render_review(collected.issues, include_waived=include_waived)
-    for engine, reason in collected.skipped:
-        text += f"# skipped: {engine}: {reason}\n"
+    for rule_id, reason in collected.skipped:
+        text += f"# skipped: {rule_id}: {reason}\n"
     _write_or_echo(text, out)
 
 
-@baseline_app.command("patch")
-def baseline_patch(
+@exceptions_app.command("patch")
+def exceptions_patch(
     file: Path = typer.Option(
         ..., "--file", "-f",
         help="Reviewed report. Use '-' to read from stdin.",
@@ -626,7 +744,7 @@ def baseline_patch(
         "", "--reason", help="Reason applied to lines that don't carry [ALLOW: …]."
     ),
     source: Optional[Path] = typer.Option(None, "--source", help="Override source tree."),
-    reference: Optional[Path] = typer.Option(None, "--reference", help="Override baseline reference XMI."),
+    reference: Optional[Path] = typer.Option(None, "--reference", help="Override the reference model."),
     base_ref: Optional[str] = typer.Option(None, "--base-ref", help="Git ref to use as baseline."),
     repo: Path = typer.Option(Path("."), "--repo", help="Git repo root (only used with --base-ref)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing."),
@@ -637,7 +755,7 @@ def baseline_patch(
 ) -> None:
     """Apply the `[ALLOW]` / `[REMOVE]` marks in a reviewed report.
 
-    Any text file works — the output of `cdec baseline review`, of
+    Any text file works — the output of `cdec exceptions review`, of
     `cdec check --log-out`, or a hand-written list — because the parser only
     looks for a marker and an issue key on the same line.
     """
@@ -659,26 +777,26 @@ def baseline_patch(
     result = apply_decisions(
         collected.store, collected, decisions, default_reason=reason
     )
-    _report_apply(result, collected.baseline_path, dry_run=dry_run)
+    _report_apply(result, collected.ledger_path, dry_run=dry_run)
     if result.changed and not dry_run:
-        save_waivers(collected.baseline_path, collected.store)
+        save_waivers(config_dir, collected.store)
     _exit_on_apply_failure(result, ignore_unknown=ignore_unknown)
 
 
-@baseline_app.command("allow")
-def baseline_allow(
+@exceptions_app.command("allow")
+def exceptions_allow(
     keys: list[str] = typer.Argument(..., help="Issue keys, e.g. V-1A2B3C4D."),
     config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
     reason: str = typer.Option("", "--reason", help="Why this issue is acceptable."),
     source: Optional[Path] = typer.Option(None, "--source", help="Override source tree."),
-    reference: Optional[Path] = typer.Option(None, "--reference", help="Override baseline reference XMI."),
+    reference: Optional[Path] = typer.Option(None, "--reference", help="Override the reference model."),
     base_ref: Optional[str] = typer.Option(None, "--base-ref", help="Git ref to use as baseline."),
     repo: Path = typer.Option(Path("."), "--repo", help="Git repo root (only used with --base-ref)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing."),
 ) -> None:
     """Accept issues by key — the path an agent or a one-liner takes.
 
-    The keys must name issues the engines report right now; a key that matches
+    The keys must name issues that are reported right now; a key that matches
     nothing is an error, not a silent no-op, because it almost always means the
     report being quoted is stale.
     """
@@ -688,48 +806,47 @@ def baseline_allow(
         config_dir, source=source, reference=reference, base_ref=base_ref, repo=repo
     )
     result = allow_keys(collected.store, collected, keys, reason=reason)
-    _report_apply(result, collected.baseline_path, dry_run=dry_run)
+    _report_apply(result, collected.ledger_path, dry_run=dry_run)
     if result.changed and not dry_run:
-        save_waivers(collected.baseline_path, collected.store)
+        save_waivers(config_dir, collected.store)
     _exit_on_apply_failure(result)
 
 
-@baseline_app.command("remove")
-def baseline_remove(
+@exceptions_app.command("remove")
+def exceptions_remove(
     keys: list[str] = typer.Argument(..., help="Issue keys to stop allowing."),
     config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing."),
 ) -> None:
-    """Withdraw waivers by key, so the issue blocks again.
+    """Withdraw exceptions by key, so the issue blocks again.
 
     Needs no source parse: the ledger alone identifies what to drop, which
-    means a waiver can always be withdrawn even if the code no longer parses.
+    means an exception can always be withdrawn even if the code no longer parses.
     """
     from code_constraints.waivers import remove_keys, save_waivers
 
-    baseline_path = config_dir / BASELINE_FILENAME
-    store = _load_waivers_cli(baseline_path)
+    store = _load_waivers_cli(config_dir)
     result = remove_keys(store, keys)
-    _report_apply(result, baseline_path, dry_run=dry_run)
+    _report_apply(result, _ledger_path(config_dir), dry_run=dry_run)
     if result.changed and not dry_run:
-        save_waivers(baseline_path, store)
+        save_waivers(config_dir, store)
     if result.malformed or result.not_waived:
         raise typer.Exit(code=1)
 
 
-@baseline_app.command("list")
-def baseline_list(
+@exceptions_app.command("list")
+def exceptions_list(
     config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
     engine: Optional[str] = typer.Option(
-        None, "--engine", help="Only show one engine's waivers: check | enforce."
+        None, "--engine", help="Only show one engine's exceptions: check | enforce | reference."
     ),
     format: str = typer.Option("human", "--format", help="human | json"),
 ) -> None:
     """Show what is currently accepted, and why."""
     if format not in ("human", "json"):
         raise typer.BadParameter(f"unknown format: {format}")
-    baseline_path = config_dir / BASELINE_FILENAME
-    store = _load_waivers_cli(baseline_path)
+    ledger = _ledger_path(config_dir)
+    store = _load_waivers_cli(config_dir)
     waivers = [w for w in store.waivers if engine is None or w.engine == engine]
 
     if format == "json":
@@ -757,9 +874,9 @@ def baseline_list(
         return
 
     if not waivers:
-        typer.echo(f"no waivers recorded in {baseline_path}.")
+        typer.echo(f"no exceptions recorded in {ledger}.")
         return
-    typer.echo(f"{len(waivers)} waiver(s) in {baseline_path}:")
+    typer.echo(f"{len(waivers)} exception(s) in {ledger}:")
     for w in sorted(waivers, key=lambda w: (w.engine, w.rule, w.qualified_name, w.detail)):
         detail = f" {w.detail}" if w.detail else ""
         typer.echo(f"  - [{w.key}] [{w.engine}/{w.rule}] {w.qualified_name}{detail}")
@@ -774,21 +891,21 @@ def baseline_list(
             typer.echo(f"      {meta}")
 
 
-@baseline_app.command("prune")
-def baseline_prune(
+@exceptions_app.command("prune")
+def exceptions_prune(
     config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
     source: Optional[Path] = typer.Option(None, "--source", help="Override source tree."),
-    reference: Optional[Path] = typer.Option(None, "--reference", help="Override baseline reference XMI."),
+    reference: Optional[Path] = typer.Option(None, "--reference", help="Override the reference model."),
     base_ref: Optional[str] = typer.Option(None, "--base-ref", help="Git ref to use as baseline."),
     repo: Path = typer.Option(Path("."), "--repo", help="Git repo root (only used with --base-ref)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Report what would change; write nothing."),
 ) -> None:
-    """Drop waivers for issues that no longer occur.
+    """Drop exceptions for issues that no longer occur.
 
-    Waivers outlive the code they were granted for, and a stale one silently
+    An exception outlives the code it was granted for, and a stale one silently
     pre-approves a future violation of the same rule on the same element. This
-    only prunes engines that actually ran, so a skipped engine never looks like
-    a clean one.
+    only prunes engines that actually ran, so a skipped rule never looks like a
+    clean one.
     """
     from code_constraints.waivers import prune as prune_waivers
     from code_constraints.waivers import save_waivers
@@ -798,16 +915,16 @@ def baseline_prune(
     )
     stale = prune_waivers(collected.store, collected)
     if not stale:
-        typer.echo("no stale waivers.")
+        typer.echo("no stale exceptions.")
         return
     verb = "would drop" if dry_run else "dropped"
-    typer.echo(f"{verb} {len(stale)} stale waiver(s):")
+    typer.echo(f"{verb} {len(stale)} stale exception(s):")
     for w in stale:
         detail = f" {w.detail}" if w.detail else ""
         typer.echo(f"  - [{w.key}] [{w.engine}/{w.rule}] {w.qualified_name}{detail}")
     if not dry_run:
-        save_waivers(collected.baseline_path, collected.store)
-        typer.echo(f"wrote {collected.baseline_path}")
+        save_waivers(config_dir, collected.store)
+        typer.echo(f"wrote {collected.ledger_path}")
 
 
 serve_app = typer.Typer(
@@ -860,9 +977,7 @@ def serve_parse(
         raise typer.BadParameter(
             f"could not auto-detect a language under {root}; pass --lang explicitly"
         )
-    if chosen not in (
-        "python", "csharp", "typescript", "svelte", "odin", "lua", "julia",
-    ):
+    if chosen not in SUPPORTED_LANGUAGES:
         raise typer.BadParameter(f"unsupported language: {chosen}")
 
     url = f"http://{host}:{port}/?path={quote(str(root))}&lang={chosen}"
@@ -1012,379 +1127,14 @@ def propose(
     _run_server(host, port, open_url=None if no_browser else view_url)
 
 
-lock_app = typer.Typer(
-    help=(
-        "Freeze class/function implementations so they cannot change (Engine C). "
-        "Identity is AST-derived, so moving or reformatting code never trips a lock."
-    )
-)
-app.add_typer(lock_app, name="lock")
-
-
-@lock_app.command("list")
-def lock_list(
-    source: Optional[Path] = typer.Argument(
-        None, exists=True, file_okay=False, dir_okay=True,
-        help="Source tree to scan (falls back to .cdec/config.yaml `source`).",
-    ),
-    lang: Optional[str] = typer.Option(None, "--lang", help="python | csharp | odin | lua | julia (languages with a lock fingerprinter)."),
-    config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
-    lockfile: Optional[Path] = typer.Option(
-        None, "--lockfile", help="Ledger path (default: .cdec/locks.yaml)."
-    ),
-    all_targets: bool = typer.Option(
-        False, "--all", help="List every lockable element, not just the locked ones."
-    ),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
-) -> None:
-    """Show which implementations are frozen, and whether each still matches."""
-    from code_constraints.lock import LockOptions, collect_targets, is_locked_target
-
-    ctx = _lock_context(source, lang, config_dir, lockfile)
-    targets = _collect_lock_targets(ctx.source, ctx.lang, ctx.options)
-
-    rows: list[dict] = []
-    for target in sorted(targets, key=lambda t: t.target):
-        locked = is_locked_target(target, ctx.options.patterns)
-        if not locked and not all_targets:
-            continue
-        entry = ctx.entries.get(target.target)
-        if not locked:
-            state = "unlocked"
-        elif entry is None:
-            state = "not-baselined"
-        elif entry.digest != target.digest:
-            state = "CHANGED"
-        else:
-            state = "ok"
-        rows.append(
-            {
-                "target": target.target,
-                "kind": target.kind,
-                "state": state,
-                "file": target.file,
-                "line": target.line,
-                "declared": target.declared,
-                "digest": target.digest[:12],
-                "reason": (entry.reason if entry else "") or target.reason,
-                "locked_by": entry.locked_by if entry else "",
-            }
-        )
-
-    # Ledger entries with no matching element are invisible above; surface them.
-    seen = {r["target"] for r in rows}
-    for name, entry in sorted(ctx.entries.items()):
-        if name in seen:
-            continue
-        rows.append(
-            {
-                "target": name, "kind": entry.kind, "state": "MISSING-FROM-SOURCE",
-                "file": entry.file, "line": 0, "declared": False,
-                "digest": entry.digest[:12], "reason": entry.reason,
-                "locked_by": entry.locked_by,
-            }
-        )
-
-    if json_output:
-        import json as _json
-
-        typer.echo(_json.dumps({"locks": rows}, indent=2, sort_keys=True))
-        return
-
-    if not rows:
-        typer.echo(
-            "no locked implementations.\n"
-            "Tag a class or function with @locked (Python) / [Locked] (C#), then run "
-            "`cdec lock set`."
-        )
-        return
-    width = max(len(r["target"]) for r in rows)
-    for r in rows:
-        via = "tag" if r["declared"] else "glob"
-        typer.echo(
-            f"{r['state']:<20} {r['target']:<{width}}  {r['kind']:<8} ({via})  "
-            f"{r['file']}:{r['line']}"
-        )
-        if r["reason"]:
-            typer.echo(f"{'':<20} reason: {r['reason']}")
-    typer.echo(f"\n{len(rows)} entr(ies).")
-
-
-@lock_app.command("check")
-def lock_check(
-    source: Optional[Path] = typer.Argument(
-        None, exists=True, file_okay=False, dir_okay=True,
-        help="Source tree to verify (falls back to .cdec/config.yaml `source`).",
-    ),
-    lang: Optional[str] = typer.Option(None, "--lang", help="python | csharp | odin | lua | julia (languages with a lock fingerprinter)."),
-    config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
-    lockfile: Optional[Path] = typer.Option(
-        None, "--lockfile", help="Ledger path (default: .cdec/locks.yaml)."
-    ),
-    bypass: bool = typer.Option(
-        False, "--bypass", help="Report but do not fail. Prints an audit banner."
-    ),
-    bypass_reason: str = typer.Option(
-        "", "--bypass-reason", help="Why locks are being bypassed (recorded in output)."
-    ),
-    format: str = typer.Option("human", "--format", help="human | json"),
-    json_out: Optional[Path] = typer.Option(None, "--json-out", help="Write a JSON report."),
-) -> None:
-    """Fail (exit 1) if any frozen implementation changed.
-
-    Catches five things: an edited body, a deleted element, a deleted @locked
-    tag, a tag that was never baselined, and a digest-algorithm change.
-    """
-    if format not in ("human", "json"):
-        raise typer.BadParameter(f"unknown format: {format}")
-
-    ctx = _lock_context(source, lang, config_dir, lockfile)
-    report = _run_lock_check(ctx, bypass=bypass, bypass_reason=bypass_reason)
-
-    from code_constraints.lock import format_report, report_to_json
-
-    if format == "human":
-        typer.echo(format_report(report), nl=False)
-    else:
-        import json as _json
-
-        typer.echo(_json.dumps(report_to_json(report), indent=2, sort_keys=True))
-
-    if json_out is not None:
-        import json as _json
-
-        json_out.parent.mkdir(parents=True, exist_ok=True)
-        json_out.write_text(
-            _json.dumps(report_to_json(report), indent=2, sort_keys=True), encoding="utf-8"
-        )
-        typer.echo(f"wrote {json_out}")
-
-    if not report.ok:
-        raise typer.Exit(code=1)
-
-
-@lock_app.command("set")
-def lock_set(
-    source: Optional[Path] = typer.Argument(
-        None, exists=True, file_okay=False, dir_okay=True,
-        help="Source tree to fingerprint (falls back to .cdec/config.yaml `source`).",
-    ),
-    lang: Optional[str] = typer.Option(None, "--lang", help="python | csharp | odin | lua | julia (languages with a lock fingerprinter)."),
-    config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
-    lockfile: Optional[Path] = typer.Option(
-        None, "--lockfile", help="Ledger path (default: .cdec/locks.yaml)."
-    ),
-    target: list[str] = typer.Option(
-        [], "--target", help="Restrict to matching qualified-name globs (repeatable)."
-    ),
-    force: bool = typer.Option(
-        False, "--force",
-        help="Re-baseline implementations that have DRIFTED, and drop stale entries. "
-             "This is the privileged operation — it accepts a change to frozen code.",
-    ),
-    reason: str = typer.Option("", "--reason", help="Why these locks were (re)set."),
-    owner: str = typer.Option("", "--owner", help="Who approved (defaults to the OS user)."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Report without writing."),
-) -> None:
-    """Record the current implementations as the approved baseline.
-
-    Without `--force` this only *adds* locks for newly tagged elements — it can
-    never erase evidence that frozen code changed, so it is safe for anyone to
-    run. Accepting a change to an already-locked implementation requires
-    `--force`, which shows up as a reviewable diff on the ledger; gate that file
-    with CODEOWNERS to keep re-baselining a lead-only action.
-    """
-    from code_constraints.lock import update_locks, write_locks
-
-    ctx = _lock_context(source, lang, config_dir, lockfile)
-    try:
-        entries, result = update_locks(
-            ctx.source, ctx.lang, ctx.entries, ctx.options,
-            only=target, force=force, reason=reason, owner=owner,
-        )
-    except Exception as exc:  # noqa: BLE001 - surfaced verbatim to the user
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    for entry in result.added:
-        typer.echo(f"+ locked   {entry.target}  ({entry.kind}, {entry.digest[:12]})")
-    for entry in result.updated:
-        typer.echo(f"~ rebased  {entry.target}  ({entry.kind}, {entry.digest[:12]})")
-    for entry in result.removed:
-        typer.echo(f"- released {entry.target}")
-
-    if result.blocked:
-        typer.echo("")
-        typer.echo(
-            f"{len(result.blocked)} locked implementation(s) have CHANGED and were left "
-            f"untouched:"
-        )
-        for v in result.blocked:
-            typer.echo(f"  - {v.target} — {v.file}:{v.line}")
-        typer.echo(
-            "\nRe-run with --force to accept these changes as the new baseline "
-            "(a lead's call), or revert the code."
-        )
-
-    if result.stale:
-        typer.echo("")
-        typer.echo(
-            f"{len(result.stale)} ledger entr(ies) are still locked but their element "
-            f"is gone or has lost its tag:"
-        )
-        for entry in result.stale:
-            typer.echo(f"  - {entry.target}")
-        typer.echo(
-            "\nThese remain locked and `cdec lock check` will keep failing. Restore the "
-            "code, or release them with `cdec lock remove --target <name>` "
-            "(or `cdec lock set --force` to prune)."
-        )
-
-    if dry_run:
-        typer.echo("\n(dry run — nothing written)")
-    elif result.changed:
-        write_locks(ctx.lockfile, entries.values())
-        typer.echo(f"\nwrote {ctx.lockfile} ({len(entries)} lock(s))")
-    elif result.clean:
-        typer.echo(f"{result.unchanged} lock(s) already up to date; nothing to write.")
-
-    if not result.clean:
-        raise typer.Exit(code=1)
-
-
-@lock_app.command("remove")
-def lock_remove(
-    target: list[str] = typer.Option(
-        ..., "--target", help="Qualified-name glob(s) to release (repeatable)."
-    ),
-    config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
-    lockfile: Optional[Path] = typer.Option(
-        None, "--lockfile", help="Ledger path (default: .cdec/locks.yaml)."
-    ),
-) -> None:
-    """Release locks from the ledger.
-
-    Removing the ledger entry is only half of unlocking — also delete the
-    `@locked` / `[Locked]` tag from the source, or the next `cdec lock check`
-    reports the element as not baselined.
-    """
-    from code_constraints.lock import load_locks, resolve_entries_for_removal, write_locks
-    from code_constraints.lock.store import LOCKS_FILENAME as _LOCKS_FILENAME
-
-    path = lockfile or (config_dir / _LOCKS_FILENAME)
-    entries = _load_locks_cli(path)
-    doomed = resolve_entries_for_removal(entries, target)
-    if not doomed:
-        typer.echo(f"no ledger entries match {', '.join(target)}")
-        raise typer.Exit(code=1)
-    for entry in doomed:
-        del entries[entry.target]
-        typer.echo(f"- released {entry.target}")
-    write_locks(path, entries.values())
-    typer.echo(f"wrote {path} ({len(entries)} lock(s) remaining)")
-    typer.echo(
-        "Remember to delete the corresponding @locked / [Locked] tag from the source."
-    )
-
-
 reference_app = typer.Typer(
-    help="Snapshot, test against, and visualise the architecture reference."
+    help=(
+        "Work with the architecture reference model. Testing the code against "
+        "it is the `reference-architecture` rule type, run by `cdec check`; "
+        "these commands author and visualise it."
+    )
 )
 app.add_typer(reference_app, name="reference")
-
-
-@reference_app.command("test")
-def reference_test(
-    source: Optional[Path] = typer.Argument(
-        None,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help="Source tree to parse (falls back to .cdec/config.yaml `source`).",
-    ),
-    reference: Optional[Path] = typer.Option(
-        None, "--reference", help="Reference XMI (default: .cdec/reference.xmi)."
-    ),
-    lang: Optional[str] = typer.Option(
-        None, "--lang", help="python | csharp | typescript | svelte | odin | lua | julia (auto-detected if omitted)."
-    ),
-    config_dir: Path = typer.Option(
-        Path(".cdec"), "--config", help="`.cdec/` folder used to resolve omitted args."
-    ),
-    json_output: bool = typer.Option(
-        False, "--json", help="Emit JSON instead of human-readable text."
-    ),
-    output: Optional[Path] = typer.Option(
-        None, "--output", help="Also write the report to this file."
-    ),
-) -> None:
-    """Fail (exit 1) if the current code deviates structurally from the reference XMI.
-
-    Reports every structural deviation — added/removed classes, added/removed
-    properties or methods, changed method signatures or return types, changed
-    access levels and modifiers (static/abstract/readonly), changed class kind,
-    and changed base classes. Intended as a CI gate to reject non-conforming PRs.
-    """
-    source_path, chosen_lang, ref_path = _resolve_reference_inputs(
-        source, lang, reference, config_dir
-    )
-    if not ref_path.is_file():
-        typer.echo(f"reference XMI not found: {ref_path}", err=True)
-        raise typer.Exit(code=2)
-
-    from code_constraints.reference import compare_to_reference, format_human, to_json
-
-    reference_proj = _load_model_cli(ref_path)
-    current = _parse_project(source_path, chosen_lang)
-    try:
-        deviations = compare_to_reference(reference_proj, current)
-    except ValueError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-    if json_output:
-        import json as _json
-
-        report_text = _json.dumps(to_json(deviations), indent=2) + "\n"
-    else:
-        report_text = format_human(deviations)
-    typer.echo(report_text, nl=False)
-
-    if output is not None:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(report_text, encoding="utf-8")
-        typer.echo(f"wrote {output}")
-
-    if deviations:
-        raise typer.Exit(code=1)
-
-
-@reference_app.command("update")
-def reference_update(
-    source: Optional[Path] = typer.Argument(
-        None,
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        help="Source tree to snapshot (falls back to .cdec/config.yaml `source`).",
-    ),
-    reference: Optional[Path] = typer.Option(
-        None, "--reference", help="Destination XMI (default: .cdec/reference.xmi)."
-    ),
-    lang: Optional[str] = typer.Option(
-        None, "--lang", help="python | csharp | typescript | svelte | odin | lua | julia (auto-detected if omitted)."
-    ),
-    config_dir: Path = typer.Option(
-        Path(".cdec"), "--config", help="`.cdec/` folder used to resolve omitted args."
-    ),
-) -> None:
-    """Snapshot the current architecture into the reference XMI."""
-    source_path, chosen_lang, ref_path = _resolve_reference_inputs(
-        source, lang, reference, config_dir
-    )
-    proj = _parse_project(source_path, chosen_lang)
-    _save_model_cli(proj, ref_path)
-    typer.echo(f"wrote {ref_path}")
 
 
 @reference_app.command("set")
@@ -1400,12 +1150,17 @@ def reference_set(
         Path(".cdec"), "--config", help="`.cdec/` folder used to resolve the destination."
     ),
 ) -> None:
-    """Lock an authored model as the target architecture.
+    """Lock an authored model in as the target architecture.
 
     Takes a hand-written / agent-written model file (JSON or XMI) and writes it
-    to the project's reference XMI, so `cdec check` and `cdec reference test`
-    immediately start constraining development against it. This is the
-    "accept the proposal" step of the propose -> review -> lock workflow.
+    to the project's reference model, so a `reference-architecture` rule starts
+    constraining development against it immediately. This is the "accept the
+    proposal" step of the propose -> review -> lock workflow.
+
+    The other way to produce a reference is to snapshot the code as it stands:
+    `cdec check --automatic-exceptions reference`. The distinction is the point.
+    `set` declares what the code *should become*; the snapshot records what it
+    *is*.
     """
     proj = _load_model_cli(model)
     if reference is not None:
@@ -1413,7 +1168,7 @@ def reference_set(
     else:
         try:
             cfg = load_project_config(config_dir)
-            ref_path = cfg.reference or (config_dir / REFERENCE_FILENAME)
+            ref_path = cfg.reference_path
         except ConfigError:
             ref_path = config_dir / REFERENCE_FILENAME
     ref_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1429,10 +1184,10 @@ def reference_show(
         exists=True,
         file_okay=False,
         dir_okay=True,
-        help="Source tree to compare (falls back to .cdec/config.yaml `source`).",
+        help="Source tree to compare (falls back to the `source` in rules.yaml).",
     ),
     reference: Optional[Path] = typer.Option(
-        None, "--reference", help="Reference XMI (default: .cdec/reference.xmi)."
+        None, "--reference", help="Reference model (default: .cdec/reference.xmi)."
     ),
     lang: Optional[str] = typer.Option(
         None, "--lang", help="python | csharp | typescript | svelte | odin | lua | julia (auto-detected if omitted)."
@@ -1443,14 +1198,20 @@ def reference_show(
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
 ) -> None:
-    """Open the web viewer to a diff of the current code against the reference (target) architecture."""
+    """Open the web viewer on a diff of the current code against the reference."""
     import uuid
 
     source_path, chosen_lang, ref_path = _resolve_reference_inputs(
         source, lang, reference, config_dir
     )
     if not ref_path.is_file():
-        typer.echo(f"reference XMI not found: {ref_path}", err=True)
+        typer.echo(
+            f"reference model not found: {ref_path}\n"
+            f"Snapshot the current architecture with "
+            f"`cdec check --automatic-exceptions reference`, or promote an authored "
+            f"model with `cdec reference set <model>`.",
+            err=True,
+        )
         raise typer.Exit(code=2)
 
     reference_proj = _load_model_cli(ref_path)
@@ -1460,8 +1221,9 @@ def reference_show(
         # *current* state, so the codebase is the old side and the reference the
         # new side: elements only in the reference render as green additions
         # ("the code still needs to grow this"), elements only in the code as
-        # red removals. This is intentionally the inverse of `diff-vs-xmi` /
-        # `reference test`, where the reference is the old baseline.
+        # red removals. This is intentionally the inverse of `diff-vs-xmi` and of
+        # the `reference-architecture` rule, where the reference is the old
+        # baseline.
         annotated = diff_projects(current, reference_proj)
     except ValueError as exc:
         typer.echo(str(exc), err=True)
@@ -1488,6 +1250,34 @@ def reference_show(
     )
     typer.echo(f"comparing {source_path} (current) against target {ref_path}; opening {url}")
     _run_server(host, port, open_url=url)
+
+
+@reference_app.command("test", hidden=True, context_settings=_PASSTHROUGH)
+def reference_test(ctx: typer.Context) -> None:
+    """Retired — see `cdec check` and the `reference-architecture` rule type."""
+    typer.echo(
+        "`cdec reference test` is now the `reference-architecture` rule type, checked "
+        "by `cdec check`.\n"
+        "Add this to .cdec/rules.yaml:\n"
+        "    - id: public-shape-is-frozen\n"
+        "      type: reference-architecture\n"
+        "      severity: error\n"
+        "then run `cdec check`.",
+        err=True,
+    )
+    raise typer.Exit(code=2)
+
+
+@reference_app.command("update", hidden=True, context_settings=_PASSTHROUGH)
+def reference_update(ctx: typer.Context) -> None:
+    """Retired — see `cdec check --automatic-exceptions reference`."""
+    typer.echo(
+        "`cdec reference update` is now "
+        "`cdec check --automatic-exceptions reference`, which re-snapshots "
+        ".cdec/reference.xmi from the current source.",
+        err=True,
+    )
+    raise typer.Exit(code=2)
 
 
 # ---------- helpers ----------
@@ -1543,110 +1333,34 @@ def _save_model_cli(project, path: Path) -> None:
         raise typer.Exit(code=2) from exc
 
 
-@dataclass
-class _LockContext:
-    """Everything `cdec lock` / `cdec check --lock` needs, resolved once."""
+# ---------- config helpers ----------
 
-    source: Path
-    lang: str
-    lockfile: Path
-    entries: dict
-    options: object  # code_constraints.lock.LockOptions
-
-
-def _lock_context(
-    source: Optional[Path],
-    lang: Optional[str],
-    config_dir: Path,
-    lockfile: Optional[Path],
-) -> _LockContext:
-    """Resolve source / language / ledger path from explicit args with a
-    `.cdec/config.yaml` fallback, mirroring `_resolve_reference_inputs`."""
-    from code_constraints.lint.config import LOCKS_FILENAME
-    from code_constraints.lock import LockOptions
-
-    cfg = None
+def _load_config_cli(config_dir: Path):
+    """`load_project_config` with typer-friendly error reporting."""
     try:
-        cfg = load_project_config(config_dir)
-    except ConfigError:
-        cfg = None
-
-    source_path = source.resolve() if source else (cfg.source if cfg else None)
-    if source_path is None:
-        raise typer.BadParameter(
-            "no source given and none found in .cdec/config.yaml; pass a SOURCE "
-            "argument or run from a scaffolded project (cdec init)."
-        )
-    chosen_lang = lang or (cfg.language if cfg else None) or detect_language(source_path)
-    if chosen_lang is None:
-        raise typer.BadParameter(
-            f"could not determine a language for {source_path}; pass --lang explicitly."
-        )
-
-    if lockfile is not None:
-        lock_path = lockfile
-    elif cfg is not None and cfg.lock.lockfile is not None:
-        lock_path = cfg.lock.lockfile
-    else:
-        lock_path = config_dir / LOCKS_FILENAME
-
-    options = LockOptions(
-        include_docstrings=cfg.lock.include_docstrings if cfg else False,
-        patterns=list(cfg.lock.targets) if cfg else [],
-    )
-    return _LockContext(
-        source=source_path,
-        lang=chosen_lang,
-        lockfile=lock_path,
-        entries=_load_locks_cli(lock_path),
-        options=options,
-    )
+        return load_project_config(config_dir)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
 
-# ---------- waiver / review helpers ----------
-
-def _filter_findings(
-    findings: list[Finding], store: WaiverStore
-) -> tuple[list[Finding], list[Finding]]:
-    """Split conformance findings into (reported, silenced-by-baseline)."""
-    kept: list[Finding] = []
-    silenced: list[Finding] = []
-    for f in findings:
-        target = silenced if store.matches("enforce", f.rule, f.qualified_name, f.detail) else kept
-        target.append(f)
-    return kept, silenced
+def _load_rules_cli(config_dir: Path):
+    """`load_rules` with typer-friendly error reporting."""
+    try:
+        return load_rules(config_dir)
+    except ConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
 
-def _record_findings(baseline_path: Path, source: Path, lang: str) -> int:
-    """Accept every current conformance finding into the ledger. Returns how
-    many are recorded."""
-    from code_constraints.enforce import enforce as run_enforce
-    from code_constraints.waivers import Waiver, load_waivers, now_stamp, save_waivers
-    from code_constraints.waivers.store import default_actor
+def _ledger_path(config_dir: Path) -> Path:
+    """The file exceptions are recorded in — `.cdec/rules.yaml`."""
+    from code_constraints.waivers import ledger_paths
 
-    findings = run_enforce(source, lang)
-    store = load_waivers(baseline_path)
-    stamp = now_stamp()
-    actor = default_actor()
-    existing = {w.key: w for w in store.for_engine("enforce")}
-    store.replace_engine(
-        "enforce",
-        [
-            Waiver(
-                engine="enforce",
-                rule=f.rule,
-                qualified_name=f.qualified_name,
-                detail=f.detail,
-                reason=existing[f.key()].reason if f.key() in existing else "",
-                added=existing[f.key()].added if f.key() in existing else stamp,
-                added_by=existing[f.key()].added_by if f.key() in existing else actor,
-            )
-            for f in findings
-        ],
-    )
-    save_waivers(baseline_path, store)
-    return len(findings)
+    return ledger_paths(config_dir)[0]
 
+
+# ---------- review helpers ----------
 
 def _collect_issues_cli(
     config_dir: Path,
@@ -1656,7 +1370,7 @@ def _collect_issues_cli(
     base_ref: Optional[str] = None,
     repo: Path = Path("."),
 ) -> "Collected":
-    """Run every engine and return the keyed issue list, with typer-friendly
+    """Run every rule and return the keyed issue list, with typer-friendly
     errors. The baseline-resolution options mirror `cdec check` exactly — the
     keys only line up if both commands look at the same diff."""
     from code_constraints.lint.pipeline import PipelineError
@@ -1678,12 +1392,12 @@ def _collect_issues_cli(
         raise typer.Exit(code=2) from exc
 
 
-def _load_waivers_cli(path: Path) -> "WaiverStore":
+def _load_waivers_cli(config_dir: Path) -> "WaiverStore":
     from code_constraints.waivers import load_waivers
     from code_constraints.waivers.store import WaiverFileError
 
     try:
-        return load_waivers(path)
+        return load_waivers(config_dir)
     except WaiverFileError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
@@ -1714,6 +1428,7 @@ def _issue_to_json(issue: "Issue") -> dict[str, object]:
         "key": issue.key,
         "engine": issue.engine,
         "rule": issue.rule,
+        "ruleId": issue.rule_id,
         "qualifiedName": issue.qualified_name,
         "detail": issue.detail,
         "message": issue.message,
@@ -1725,7 +1440,7 @@ def _issue_to_json(issue: "Issue") -> dict[str, object]:
     }
 
 
-def _report_apply(result: "ApplyResult", baseline_path: Path, *, dry_run: bool) -> None:
+def _report_apply(result: "ApplyResult", ledger_path: Path, *, dry_run: bool) -> None:
     """Print what an allow/patch/remove did — or would do."""
     would = "would " if dry_run else ""
     for issue in result.allowed:
@@ -1751,11 +1466,11 @@ def _report_apply(result: "ApplyResult", baseline_path: Path, *, dry_run: bool) 
         typer.echo(problem, err=True)
 
     if not result.changed:
-        typer.echo("no changes to the baseline.")
+        typer.echo("no changes to the exceptions list.")
     elif dry_run:
-        typer.echo(f"dry run — {baseline_path} not written.")
+        typer.echo(f"dry run — {ledger_path} not written.")
     else:
-        typer.echo(f"wrote {baseline_path}")
+        typer.echo(f"wrote {ledger_path}")
 
 
 def _exit_on_apply_failure(result: "ApplyResult", *, ignore_unknown: bool = False) -> None:
@@ -1766,39 +1481,6 @@ def _exit_on_apply_failure(result: "ApplyResult", *, ignore_unknown: bool = Fals
         raise typer.Exit(code=1)
 
 
-def _load_locks_cli(path: Path) -> dict:
-    from code_constraints.lock import LockfileError, load_locks
-
-    try:
-        return load_locks(path)
-    except LockfileError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-
-def _collect_lock_targets(source: Path, lang: str, options):
-    from code_constraints.lock import UnsupportedLockLanguage, collect_targets
-
-    try:
-        return collect_targets(source, lang, options)
-    except UnsupportedLockLanguage as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-
-def _run_lock_check(ctx: _LockContext, *, bypass: bool, bypass_reason: str):
-    from code_constraints.lock import UnsupportedLockLanguage, check_locks
-
-    try:
-        return check_locks(
-            ctx.source, ctx.lang, ctx.entries, ctx.options,
-            bypass=bypass, bypass_reason=bypass_reason,
-        )
-    except UnsupportedLockLanguage as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-
-
 def _resolve_reference_inputs(
     source: Optional[Path],
     lang: Optional[str],
@@ -1806,7 +1488,7 @@ def _resolve_reference_inputs(
     config_dir: Path,
 ) -> tuple[Path, str, Path]:
     """Resolve (source_path, language, reference_path) from explicit args with a
-    `.cdec/` fallback. Explicit args always win; `.cdec/config.yaml` fills the gaps
+    `.cdec/` fallback. Explicit args always win; `.cdec/rules.yaml` fills the gaps
     and `.cdec/reference.xmi` is the conventional reference location."""
     cfg = None
     if source is None or lang is None or reference is None:
@@ -1818,7 +1500,7 @@ def _resolve_reference_inputs(
     source_path = source.resolve() if source else (cfg.source if cfg else None)
     if source_path is None:
         raise typer.BadParameter(
-            "no source given and none found in .cdec/config.yaml; pass a SOURCE "
+            "no source given and none found in .cdec/rules.yaml; pass a SOURCE "
             "argument or run from a scaffolded project (cdec init)."
         )
 
@@ -1827,15 +1509,13 @@ def _resolve_reference_inputs(
         raise typer.BadParameter(
             f"could not determine a language for {source_path}; pass --lang explicitly."
         )
-    if chosen_lang not in (
-        "python", "csharp", "typescript", "svelte", "odin", "lua", "julia",
-    ):
+    if chosen_lang not in SUPPORTED_LANGUAGES:
         raise typer.BadParameter(f"unsupported language: {chosen_lang}")
 
     if reference is not None:
         ref_path = reference
-    elif cfg is not None and cfg.reference is not None:
-        ref_path = cfg.reference
+    elif cfg is not None:
+        ref_path = cfg.reference_path
     else:
         ref_path = config_dir / REFERENCE_FILENAME
 

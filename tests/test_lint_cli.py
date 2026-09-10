@@ -1,4 +1,10 @@
-"""End-to-end CLI tests for `cdec init` and `cdec check`."""
+"""End-to-end CLI tests for `cdec init` and `cdec check`.
+
+`cdec check` is the whole gate now, so this file also covers the paths that used
+to belong to separate commands: `--automatic-exceptions reference` (was
+`cdec reference update`) and `--automatic-exceptions rules` (was
+`cdec check --update-baseline`).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from code_constraints.cli.__main__ import app
@@ -38,18 +45,56 @@ def _run(args, cwd=None):
         os.chdir(here)
 
 
-def test_init_creates_cdec_folder(project_dir):
+def _set_rules(config_dir: Path, rules_yaml: str) -> None:
+    """Replace the `rules:` list, keeping the project settings above it.
+
+    Settings and rules share one file now, so a test that wants a specific rule
+    set can't just overwrite `rules.yaml` — it would drop `language:` and
+    `source:` with it.
+    """
+    path = config_dir / "rules.yaml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    header = "".join(
+        f"{key}: {doc[key]}\n"
+        for key in ("language", "source", "reference")
+        if doc.get(key) is not None
+    )
+    path.write_text(header + "\n" + rules_yaml, encoding="utf-8")
+
+
+NO_NEW_CLASSES = (
+    "rules:\n"
+    "  - id: no-new-classes\n"
+    "    type: no-new-classes\n"
+    "    severity: error\n"
+)
+
+
+def test_init_creates_one_rules_file(project_dir):
     result = _run(
         ["init", "--lang", "python", "--source", "src_tree"],
         cwd=project_dir,
     )
     assert result.exit_code == 0, result.output
-    uml = project_dir / ".cdec"
-    assert (uml / "config.yaml").is_file()
-    assert (uml / "rules.yaml").is_file()
-    assert (uml / "baseline.yaml").is_file()
-    assert (uml / "reference.xmi").is_file()
-    assert (uml / "README.md").is_file()
+    cdec = project_dir / ".cdec"
+    assert (cdec / "rules.yaml").is_file()
+    assert (cdec / "reference.xmi").is_file()
+    assert (cdec / "README.md").is_file()
+    # The per-concern files are gone: settings, rules, exceptions and locks all
+    # live in rules.yaml, which is the point of the layout.
+    assert not (cdec / "config.yaml").exists()
+    assert not (cdec / "baseline.yaml").exists()
+    assert not (cdec / "locks.yaml").exists()
+
+
+def test_init_scaffolds_usable_settings(project_dir):
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    doc = yaml.safe_load(
+        (project_dir / ".cdec" / "rules.yaml").read_text(encoding="utf-8")
+    )
+    assert doc["language"] == "python"
+    assert doc["source"] == "src_tree"
+    assert doc["rules"] == []
 
 
 def test_init_refuses_overwrite_without_force(project_dir):
@@ -68,36 +113,28 @@ def test_check_no_violations_on_unchanged_source(project_dir):
 
 def test_check_fires_on_new_class_after_init(project_dir):
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
-    # Append a no-new-classes rule.
-    rules_path = project_dir / ".cdec" / "rules.yaml"
-    rules_path.write_text(
-        "rules:\n"
-        "  - id: no-new-classes\n"
-        "    type: no-new-classes\n"
-        "    severity: error\n",
-        encoding="utf-8",
-    )
-    # Add a brand-new class to the source tree.
+    _set_rules(project_dir / ".cdec", NO_NEW_CLASSES)
     (project_dir / "src_tree" / "animals" / "cat.py").write_text(
         "class Cat:\n    name: str = ''\n",
         encoding="utf-8",
     )
     json_path = project_dir / "lint.json"
-    result = _run(
-        ["check", "--json-out", str(json_path)],
-        cwd=project_dir,
-    )
+    result = _run(["check", "--json-out", str(json_path)], cwd=project_dir)
     assert result.exit_code == 1, result.output
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     qns = {v["qualified_name"] for v in payload["violations"]}
     assert any("Cat" in qn for qn in qns)
 
 
-def test_check_update_reference_then_clean(project_dir):
+def test_automatic_exceptions_reference_resnapshots(project_dir):
+    """`--automatic-exceptions reference` replaces `cdec reference update`."""
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
-    (project_dir / ".cdec" / "rules.yaml").write_text(
-        "rules:\n  - id: no-new-classes\n    type: no-new-classes\n    severity: error\n",
-        encoding="utf-8",
+    _set_rules(
+        project_dir / ".cdec",
+        NO_NEW_CLASSES
+        + "  - id: public-shape-is-frozen\n"
+          "    type: reference-architecture\n"
+          "    severity: error\n",
     )
     (project_dir / "src_tree" / "animals" / "cat.py").write_text(
         "class Cat:\n    pass\n",
@@ -105,8 +142,9 @@ def test_check_update_reference_then_clean(project_dir):
     )
     fail = _run(["check"], cwd=project_dir)
     assert fail.exit_code == 1
-    refresh = _run(["check", "--update-reference"], cwd=project_dir)
+    refresh = _run(["check", "--automatic-exceptions", "reference"], cwd=project_dir)
     assert refresh.exit_code == 0, refresh.output
+    assert "reference.xmi" in refresh.output
     clean = _run(["check"], cwd=project_dir)
     assert clean.exit_code == 0, clean.output
 
@@ -124,32 +162,102 @@ def test_check_format_json_outputs_json(project_dir):
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
     result = _run(["check", "--format", "json"], cwd=project_dir)
     assert result.exit_code == 0, result.output
-    # Find the JSON object in stdout (may be preceded by other writes).
     start = result.output.index("{")
-    # The JSON payload ends at the last `}` before any subsequent typer.echo lines.
     end = result.output.rindex("}")
     payload = json.loads(result.output[start:end + 1])
     assert "violations" in payload
 
 
-def test_check_baseline_silences_violations(project_dir):
+def test_automatic_exceptions_rules_grandfathers_violations(project_dir):
+    """`--automatic-exceptions rules` replaces `cdec check --update-baseline`."""
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
-    (project_dir / ".cdec" / "rules.yaml").write_text(
-        "rules:\n  - id: no-new-classes\n    type: no-new-classes\n    severity: error\n",
-        encoding="utf-8",
-    )
+    _set_rules(project_dir / ".cdec", NO_NEW_CLASSES)
     (project_dir / "src_tree" / "animals" / "cat.py").write_text(
         "class Cat:\n    pass\n",
         encoding="utf-8",
     )
     fail = _run(["check"], cwd=project_dir)
     assert fail.exit_code == 1
-    # Record current violations as baseline.
-    rec = _run(["check", "--update-baseline"], cwd=project_dir)
+    rec = _run(["check", "--automatic-exceptions", "rules"], cwd=project_dir)
     assert rec.exit_code == 0, rec.output
-    # Re-run: should now pass because the violation is in the baseline.
     clean = _run(["check"], cwd=project_dir)
     assert clean.exit_code == 0, clean.output
+    assert "silenced by an exception" in clean.output
+
+
+def test_grandfathering_does_not_pre_approve_the_next_violation(project_dir):
+    """The ratchet: today's violations are accepted, tomorrow's still fail."""
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    _set_rules(project_dir / ".cdec", NO_NEW_CLASSES)
+    (project_dir / "src_tree" / "animals" / "cat.py").write_text(
+        "class Cat:\n    pass\n", encoding="utf-8"
+    )
+    _run(["check", "--automatic-exceptions", "rules"], cwd=project_dir)
+    assert _run(["check"], cwd=project_dir).exit_code == 0
+
+    (project_dir / "src_tree" / "animals" / "lion.py").write_text(
+        "class Lion:\n    pass\n", encoding="utf-8"
+    )
+    result = _run(["check"], cwd=project_dir)
+    assert result.exit_code == 1, result.output
+    assert "Lion" in result.output
+    assert "Cat" not in result.output
+
+
+def test_exceptions_are_written_into_rules_yaml(project_dir):
+    """The whole point of the layout: one committed file carries the decision."""
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    _set_rules(project_dir / ".cdec", NO_NEW_CLASSES)
+    (project_dir / "src_tree" / "animals" / "cat.py").write_text(
+        "class Cat:\n    pass\n", encoding="utf-8"
+    )
+    _run(["check", "--automatic-exceptions", "rules"], cwd=project_dir)
+    doc = yaml.safe_load(
+        (project_dir / ".cdec" / "rules.yaml").read_text(encoding="utf-8")
+    )
+    assert doc["rules"], "the hand-written rules must survive the write"
+    assert doc["exceptions"], "the accepted violation must land in the same file"
+    assert any("Cat" in e["qualified_name"] for e in doc["exceptions"])
+
+
+def test_writing_exceptions_preserves_comments_and_messages(project_dir):
+    """A tool write must not reflow the file a human maintains."""
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    path = project_dir / ".cdec" / "rules.yaml"
+    _set_rules(
+        project_dir / ".cdec",
+        "# A comment nobody should lose.\n"
+        "rules:\n"
+        "  - id: no-new-classes\n"
+        "    type: no-new-classes\n"
+        "    severity: error\n"
+        "    message: |\n"
+        "      Line one of the explanation.\n"
+        "      Line two of the explanation.\n",
+    )
+    before = path.read_text(encoding="utf-8")
+    (project_dir / "src_tree" / "animals" / "cat.py").write_text(
+        "class Cat:\n    pass\n", encoding="utf-8"
+    )
+    _run(["check", "--automatic-exceptions", "rules"], cwd=project_dir)
+    after = path.read_text(encoding="utf-8")
+
+    assert "# A comment nobody should lose." in after
+    assert "Line one of the explanation." in after
+    assert "Line two of the explanation." in after
+    assert after.startswith(before.rstrip("\n"))
+
+
+def test_unknown_rule_type_names_the_known_ones(project_dir):
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    _set_rules(
+        project_dir / ".cdec",
+        "rules:\n  - id: nope\n    type: not-a-real-rule\n    severity: error\n",
+    )
+    result = _run(["check"], cwd=project_dir)
+    assert result.exit_code == 2
+    assert "tag-conformance" in result.output
+    assert "implementation-locks" in result.output
 
 
 def test_python_demo_bundled_config_passes():
@@ -170,22 +278,18 @@ PYTHON_DEMO_EXAMPLE = Path(__file__).parent.parent / "examples" / "python_demo"
 
 
 @pytest.mark.skipif(not CSHARP_DEMO.is_dir(), reason="examples/csharp_demo not present")
-def test_csharp_demo_bundled_config_passes():
-    """The .cdec/ folder shipped with examples/csharp_demo must lint clean."""
+def test_csharp_demo_reports_its_seeded_violation():
+    """The bundled demo seeds one conformance bug, and `cdec check` is now what
+    catches it — there is no second command to run."""
     result = _run(
-        [
-            "check",
-            "--config", str(CSHARP_DEMO / ".cdec"),
-            "--source", str(CSHARP_DEMO),
-        ],
+        ["check", "--config", str(CSHARP_DEMO / ".cdec"), "--source", str(CSHARP_DEMO)],
     )
-    assert result.exit_code == 0, result.output
-    assert "no violations" in result.output
+    assert result.exit_code == 1, result.output
+    assert "tags-must-be-honoured" in result.output
 
 
 @pytest.mark.skipif(not PYTHON_DEMO_EXAMPLE.is_dir(), reason="examples/python_demo not present")
-def test_python_demo_example_bundled_config_passes():
-    """The .cdec/ folder shipped with examples/python_demo must lint clean."""
+def test_python_demo_reports_its_seeded_violation():
     result = _run(
         [
             "check",
@@ -193,8 +297,29 @@ def test_python_demo_example_bundled_config_passes():
             "--source", str(PYTHON_DEMO_EXAMPLE),
         ],
     )
-    assert result.exit_code == 0, result.output
-    assert "no violations" in result.output
+    assert result.exit_code == 1, result.output
+    assert "tags-must-be-honoured" in result.output
+    # The model-level rules still pass; only the tag rule fires.
+    assert "animals-must-not-depend-on-store" not in result.output
+
+
+@pytest.mark.skipif(not PYTHON_DEMO_EXAMPLE.is_dir(), reason="examples/python_demo not present")
+def test_python_demo_model_rules_pass_on_their_own():
+    """With the source-level rules switched off, the demo's model rules are clean."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        shadow = Path(tmp) / "python_demo"
+        shutil.copytree(PYTHON_DEMO_EXAMPLE, shadow)
+        path = shadow / ".cdec" / "rules.yaml"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            "  - id: tags-must-be-honoured\n    type: tag-conformance\n    severity: error\n",
+            "  - id: tags-must-be-honoured\n    type: tag-conformance\n    severity: off\n",
+        )
+        path.write_text(text, encoding="utf-8")
+        result = _run(["check", "--config", str(shadow / ".cdec"), "--source", str(shadow)])
+        assert result.exit_code == 0, result.output
 
 
 def test_python_demo_rule_fires_when_invariant_broken(tmp_path):
@@ -236,10 +361,7 @@ def test_check_base_ref_path(tmp_path):
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=proj)
     # Add a new class and DO NOT commit — we want it as working tree.
     (src / "animals" / "cat.py").write_text("class Cat:\n    pass\n", encoding="utf-8")
-    (proj / ".cdec" / "rules.yaml").write_text(
-        "rules:\n  - id: no-new-classes\n    type: no-new-classes\n    severity: error\n",
-        encoding="utf-8",
-    )
+    _set_rules(proj / ".cdec", NO_NEW_CLASSES)
     # Need to commit the new file so it's parseable from the working tree
     # (cdec check parses the on-disk source). The --base-ref points at HEAD~0
     # before this commit.
@@ -248,3 +370,78 @@ def test_check_base_ref_path(tmp_path):
     result = _run(["check", "--base-ref", "HEAD~1"], cwd=proj)
     assert result.exit_code == 1, result.output
     assert "Cat" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Migration off the old per-concern files.
+# ---------------------------------------------------------------------------
+
+def test_migrate_folds_the_legacy_files_into_rules_yaml(project_dir):
+    cdec = project_dir / ".cdec"
+    cdec.mkdir()
+    (cdec / "config.yaml").write_text(
+        "language: python\nsource: src_tree\n"
+        "baseline:\n  reference: .cdec/reference.xmi\n"
+        "lock:\n  enabled: true\n  include_docstrings: false\n  targets: ['orders.**']\n",
+        encoding="utf-8",
+    )
+    (cdec / "rules.yaml").write_text(
+        "# Hand-written and full of explanation.\n" + NO_NEW_CLASSES, encoding="utf-8"
+    )
+    (cdec / "baseline.yaml").write_text(
+        "violations:\n"
+        "  no-new-classes:\n"
+        "    - qualified_name: animals.Cat\n"
+        "      reason: legacy, ARCH-42\n",
+        encoding="utf-8",
+    )
+    (cdec / "locks.yaml").write_text(
+        "version: 1\nlocks:\n"
+        "- target: orders.Receipt.formatted\n"
+        "  kind: method\n  algo: py-ast/1\n  digest: abc123\n",
+        encoding="utf-8",
+    )
+
+    result = _run(["init", "--migrate"], cwd=project_dir)
+    assert result.exit_code == 0, result.output
+
+    assert not (cdec / "config.yaml").exists()
+    assert not (cdec / "baseline.yaml").exists()
+    assert not (cdec / "locks.yaml").exists()
+
+    doc = yaml.safe_load((cdec / "rules.yaml").read_text(encoding="utf-8"))
+    assert doc["language"] == "python"
+    assert doc["source"] == "src_tree"
+    assert doc["rules"][0]["id"] == "no-new-classes"
+    assert doc["exceptions"][0]["qualified_name"] == "animals.Cat"
+    assert doc["exceptions"][0]["reason"] == "legacy, ARCH-42"
+    assert doc["locks"][0]["target"] == "orders.Receipt.formatted"
+    # A `lock:` settings block becomes a real rule, since locks are a rule now.
+    lock_rules = [r for r in doc["rules"] if r["type"] == "implementation-locks"]
+    assert lock_rules and lock_rules[0]["targets"] == ["orders.**"]
+    # And the hand-written comment survives.
+    assert "# Hand-written and full of explanation." in (cdec / "rules.yaml").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_migrate_on_an_already_migrated_project_is_a_no_op(project_dir):
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    result = _run(["init", "--migrate"], cwd=project_dir)
+    assert result.exit_code == 0, result.output
+    assert "nothing to migrate" in result.output
+
+
+def test_a_legacy_layout_still_checks_without_migrating(project_dir):
+    """An un-migrated project keeps working; it is told, not broken."""
+    cdec = project_dir / ".cdec"
+    cdec.mkdir()
+    (cdec / "config.yaml").write_text(
+        "language: python\nsource: src_tree\n", encoding="utf-8"
+    )
+    (cdec / "rules.yaml").write_text(NO_NEW_CLASSES, encoding="utf-8")
+    (cdec / "baseline.yaml").write_text("violations: {}\n", encoding="utf-8")
+
+    result = _run(["check"], cwd=project_dir)
+    assert result.exit_code == 0, result.output
+    assert "cdec init --migrate" in result.output

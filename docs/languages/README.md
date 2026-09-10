@@ -15,7 +15,7 @@ Read the Tutorial first if you're new. Come here when you're pointing `cdec` at 
 | **[Odin](ODIN.md)** | Procedures-as-methods, `using` embedding, `//@cdec` comment tags |
 | **[Lua](LUA.md)** | Table-and-metatable classes, `---@cdec` comment tags |
 | **[Julia](JULIA.md)** | Multiple dispatch as methods, macro tags, space-separated arguments |
-| **[TypeScript & Svelte](TYPESCRIPT-SVELTE.md)** | Modelling and Engine A on a parse-only language |
+| **[TypeScript & Svelte](TYPESCRIPT-SVELTE.md)** | Modelling and the model rules on a parse-only language |
 
 ---
 
@@ -27,14 +27,14 @@ tags, `enforce` and `lock` each need extra machinery on top.
 | Capability | Python | C# | Odin | Lua | Julia | TypeScript | Svelte |
 |---|---|---|---|---|---|---|---|
 | Parse to model, diagrams, diff | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `rules.yaml` rules — `check` (Engine A) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `rules.yaml` rules — `check` (the model rules) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Constraint tags | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `enforce` (Engine B) | ✅ heuristic | ✅ precise | ✅ precise | ✅ idiom-based | ✅ name-based | — | — |
-| `lock` (Engine C) | ✅ `py-ast/1` | ✅ `cs-ts/1` | ✅ `odin-ts/1` | ✅ `lua-ts/1` | ✅ `jl-ts/1` | ❌ | ❌ |
-| Reference gate (Engine D) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `enforce` (`tag-conformance`) | ✅ heuristic | ✅ precise | ✅ precise | ✅ idiom-based | ✅ name-based | — | — |
+| `lock` (`implementation-locks`) | ✅ `py-ast/1` | ✅ `cs-ts/1` | ✅ `odin-ts/1` | ✅ `lua-ts/1` | ✅ `jl-ts/1` | ❌ | ❌ |
+| Reference gate (`reference-architecture`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Activity / sequence tags | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-`cdec enforce` and `cdec lock` refuse an unsupported language **by name** rather than
+the `tag-conformance` rule and the `implementation-locks` rule refuse an unsupported language **by name** rather than
 silently reporting "nothing found", so you always know which of the two you're looking at.
 
 ---
@@ -113,7 +113,7 @@ is lexical and file-scoped.
 
 This is what makes a tag on a free-standing procedure constrain the method a reader expects
 to see it on. It also means the same qualified name — `orders.Receipt.formatted` — is what
-the diagram shows, what `cdec lock` records, and what `cdec baseline allow` accepts.
+the diagram shows, what the `implementation-locks` rule records, and what `cdec exceptions allow` accepts.
 
 **Receiver-less callables become a `static` class** named after the file stem, the UML
 utility-class idiom. Without it, a tag on a free function would be silently dropped.

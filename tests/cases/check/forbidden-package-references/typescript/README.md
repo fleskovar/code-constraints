@@ -94,7 +94,7 @@ offending class, because the edge may come from any class in it.
 
 ### TypeScript-specific notes
 
-TypeScript has no constraint tags and no `cdec lock` support, but it parses into the same `Project` model as every other language — so every `rules.yaml` rule works, this one included. `Order[]` is unwrapped by the same `resolve_association` that handles `List<T>` and `list[T]`.
+TypeScript has no constraint tags and no implementation-lock support, but it parses into the same `Project` model as every other language — so every `rules.yaml` rule works, this one included. `Order[]` is unwrapped by the same `resolve_association` that handles `List<T>` and `list[T]`.
 
 ## Why this proves the code is correct
 

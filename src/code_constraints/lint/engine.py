@@ -1,7 +1,15 @@
-"""Orchestrate: build RuleContext, dispatch to rules, collect violations."""
+"""Orchestrate: build RuleContext, dispatch to rules, collect violations.
+
+This is the whole of `cdec check`. Every gate the tool offers — configured
+architectural rules, source-tag conformance, implementation locks, the
+reference gate — arrives here as a `Rule`, so there is one run, one report, one
+exit code, and one place to grant an exception.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 from code_constraints.core.associations import resolve_association
@@ -9,7 +17,22 @@ from code_constraints.core.model import DiffStatus, Package, Project
 
 from code_constraints.lint.baseline import Baseline
 from code_constraints.lint.report import Report
-from code_constraints.lint.rules.base import Rule, RuleContext, Violation
+from code_constraints.lint.rules.base import Rule, RuleContext, RuleSkipped, Violation
+
+
+@dataclass
+class SourceContext:
+    """Where the code and the config live.
+
+    Needed only by the rules that adapt an engine which re-reads the source
+    (tag conformance, locks) or loads a second model (the reference gate).
+    Rules that read the model alone never touch it, which is why it is optional.
+    """
+
+    source: Path | None = None
+    language: str = ""
+    config_dir: Path | None = None
+    reference_path: Path | None = None
 
 
 def run_checks(
@@ -19,6 +42,9 @@ def run_checks(
     has_diff: bool,
     baseline: Baseline | None = None,
     baseline_project: Project | None = None,
+    source_context: SourceContext | None = None,
+    bypass_locks: bool = False,
+    bypass_reason: str = "",
 ) -> Report:
     """Run every rule and return a `Report`.
 
@@ -29,27 +55,60 @@ def run_checks(
     `baseline_project` is the OLD side of the diff (unannotated). Diff-scope
     rules that need the previous element state (e.g. frozen-rules) read it via
     `ctx.baseline_class_by_qn`.
+
+    `bypass_locks` moves lock violations out of the failing set into
+    `Report.bypassed`. They are still collected and still printed under an audit
+    banner, and the JSON report says so, so a pipeline can reject a bypassed run
+    on a protected branch rather than silently accepting it.
     """
-    ctx = _build_context(project, has_diff, baseline_project)
+    ctx = _build_context(project, has_diff, baseline_project, source_context)
     raw: list[Violation] = []
     skipped: list[tuple[str, str]] = []
     for rule in rules:
         if rule.scope == "diff" and not has_diff:
             skipped.append((rule.rule_id, "no baseline available; diff-scope rule skipped"))
             continue
-        for v in rule.check(ctx) or ():
-            raw.append(v)
+        try:
+            # Materialised inside the guard: `check` is a generator in most
+            # rules, so a RuleSkipped raised in its body only surfaces on
+            # iteration.
+            raw.extend(rule.check(ctx) or ())
+        except RuleSkipped as exc:
+            skipped.append((rule.rule_id, str(exc)))
     if baseline is not None:
         kept, suppressed = baseline.filter(raw)
     else:
         kept, suppressed = raw, []
-    return Report(violations=kept, suppressed=suppressed, skipped=skipped)
+    bypassed: list[Violation] = []
+    if bypass_locks:
+        held = [v for v in kept if v.key_engine == "lock"]
+        if held:
+            kept = [v for v in kept if v.key_engine != "lock"]
+            bypassed = held
+    return Report(
+        violations=kept,
+        suppressed=suppressed,
+        skipped=skipped,
+        bypassed=bypassed,
+        bypass_reason=bypass_reason if bypassed else "",
+    )
 
 
 def _build_context(
-    project: Project, has_diff: bool, baseline_project: Project | None = None
+    project: Project,
+    has_diff: bool,
+    baseline_project: Project | None = None,
+    source_context: SourceContext | None = None,
 ) -> RuleContext:
-    ctx = RuleContext(project=project, has_diff=has_diff)
+    src = source_context or SourceContext()
+    ctx = RuleContext(
+        project=project,
+        has_diff=has_diff,
+        source=src.source,
+        language=src.language,
+        config_dir=src.config_dir,
+        reference_path=src.reference_path,
+    )
     # Class index by qualified name.
     for cls in project.iter_classes():
         ctx.class_by_qn[cls.qualified_name] = cls

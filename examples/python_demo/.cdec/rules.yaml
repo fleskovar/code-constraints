@@ -1,3 +1,8 @@
+# Project settings (migrated from config.yaml).
+language: python
+source: .
+reference: .cdec/reference.xmi
+
 # Demo rule set for the python_demo fixture — the Python port of the
 # csharp_demo rules. Severity is mixed: architectural invariants
 # (layering, naming) are `error`, drift signals (new/removed classes,
@@ -17,7 +22,7 @@ rules:
       New class '{qualified_name}' was introduced.
       The python_demo fixture is a curated reference; new classes change
       what diagrams and parser tests cover. If this is intentional, run
-      `cdec check --update-reference` to bump the snapshot.
+      `cdec check --automatic-exceptions reference` to bump the snapshot.
 
   - id: no-removed-classes
     type: no-removed-classes
@@ -26,7 +31,7 @@ rules:
     message: |
       Class '{qualified_name}' was removed. Confirm no other module
       still expects it. If deliberate, run
-      `cdec check --update-reference`.
+      `cdec check --automatic-exceptions reference`.
 
   # The `Notification` ABC is part of the public API surface. Adding or
   # removing operations on it requires a deliberate baseline bump.
@@ -43,12 +48,12 @@ rules:
       (EmailNotifier, SmsNotifier, and downstream production adapters)
       must keep its signature shape stable. If this change is
       intentional and downstream impls have been updated in lockstep,
-      run `cdec check --update-reference` to accept the new baseline.
+      run `cdec check --automatic-exceptions reference` to accept the new baseline.
 
-  # Freeze the architectural-rule tags themselves. This is Engine A
+  # Freeze the architectural-rule tags themselves. This is a model rule
   # (drift) — it compares the tags recorded in reference.xmi against the
   # current model and fires when one is removed or weakened. It never
-  # inspects method bodies; that's the separate `cdec enforce` command.
+  # inspects method bodies; that is the separate `tag-conformance` rule below.
   # Try it: delete `@sealed` from `orders.billing.Receipt` and re-run
   # `cdec check` — this rule will flag the removal.
   - id: freeze-architectural-tags
@@ -62,7 +67,7 @@ rules:
       '{qualified_name}' was {action}. These tags encode deliberate
       design constraints (factory-only construction, immutability,
       sealing). Re-add the tag, or — if the constraint is genuinely
-      being retired — run `cdec check --update-reference` to accept it.
+      being retired — run `cdec check --automatic-exceptions reference` to accept it.
 
   # --- Snapshot: architectural invariants ---
 
@@ -172,3 +177,52 @@ rules:
       change around it ripples outward. Consider splitting
       responsibilities, introducing a facade, or depending on
       protocols/ABCs instead of concrete types.
+
+  # --- Source-level rules -------------------------------------------------
+  # These re-read the code rather than the model. They used to be separate
+  # commands (`tag-conformance`, `cdec check`, `cdec check`); they
+  # are rule types now, so one `cdec check` is the whole gate.
+
+  # Does the implementation actually obey the tags written on it? Inspects
+  # method bodies for @no_instantiation / @factory / @immutable, and checks
+  # @sealed structurally across files. The demo seeds one deliberate
+  # violation, so this rule is what makes `cdec check` fail here.
+  - id: tags-must-be-honoured
+    type: tag-conformance
+    severity: error
+    message: |
+      [{rule}] {message}
+      A constraint tag is a promise the code has to keep. Either route the
+      call through the designated collaborator, or — if the construction is
+      genuinely fine — widen the tag with `allow=[...]` rather than deleting
+      it.
+
+  # A @locked body may not change at all. Digests live in the `locks:`
+  # section at the end of this file; record new ones with
+  # `cdec check --automatic-exceptions locks`.
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+    include_docstrings: false
+    targets: []
+
+  # The wall behind the scalpels: any structural deviation from
+  # .cdec/reference.xmi at all — including access-level, modifier and class-kind
+  # changes that the diff engine (and therefore `frozen-members`) cannot see.
+  # Off by default in the demos so the other rules stay readable; switch to
+  # `error` and re-snapshot with `cdec check --automatic-exceptions reference`.
+  - id: public-shape-is-frozen
+    type: reference-architecture
+    severity: off
+
+# >>> cdec: managed section — rewritten by `cdec check --automatic-exceptions`
+# >>> and by `cdec exceptions ...`. Edit the rules above this line, not below it.
+locks:
+- target: orders.Receipt.formatted
+  kind: method
+  algo: py-ast/1
+  digest: def9d237e48b6d2aae2cc46251c3b670d563130c551bf3116d394a097fe35863
+  file: orders/billing.py
+  locked_at: '2026-08-02T21:00:38+00:00'
+  locked_by: Fran
+  reason: receipt wording is contractual; finance signed off on it

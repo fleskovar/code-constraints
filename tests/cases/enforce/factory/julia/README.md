@@ -4,7 +4,7 @@
 
 `@factory(creates=[…])` enforces "there is exactly one way to build this". Construction inside the designated factory is fine; the same call anywhere else is a violation. This case pins both, plus the delegating call that is the intended fix.
 
-**Engine:** B — conformance — `cdec enforce`  
+**Engine:** B — conformance — the `tag-conformance` rule  
 **Constraint:** [`factory`](../../../../../docs/RULES_CATALOGUE.md#factory)  
 **Language:** Julia  
 **Runner:** `tests/case_runner.py::_run_enforce`
@@ -50,7 +50,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec enforce` **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
+1. The `tag-conformance` rule **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
 2. Construction detection in this language is **name-based**. Construction has no dedicated syntax: `Money(1.0)` is an ordinary call, indistinguishable at the grammar level from `round(1.0)`. So a call counts only when its callee names a type *this parse saw*. Narrower than Python's heuristic — no false positives on stdlib calls — at the cost of missing constructions of types outside the parse.
 3. `creates:` holds **short type names**, not qualified names.
 4. The tag may sit on the class or on a method; either way the **owning class** becomes the designated factory, and construction is permitted anywhere inside it.

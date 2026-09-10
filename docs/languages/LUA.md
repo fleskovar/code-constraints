@@ -4,8 +4,8 @@
 > slice of the bookstore domain with a fully tagged `billing` module and one intentional
 > violation. Every command below is copy-pasteable from the repository root.
 
-Lua support is complete: parser, all seven constraint tags, `cdec enforce` (Engine B) with
-**idiom-based** construction detection, and `cdec lock` (Engine C) with the `lua-ts/1`
+Lua support is complete: parser, all seven constraint tags, the `tag-conformance` rule (`tag-conformance`) with
+**idiom-based** construction detection, and the `implementation-locks` rule (`implementation-locks`) with the `lua-ts/1`
 fingerprinter. Activity and sequence diagrams are not implemented for Lua.
 
 Lua is the loosest language `cdec` supports — dynamically typed, with classes that are a
@@ -155,9 +155,9 @@ functions never appear as a module class in your diagrams.
 
 ---
 
-## 4. Engine A — architectural drift (`cdec check`)
+## 4. the model rules — architectural drift (`cdec check`)
 
-Engine A reads the model only. Everything in
+the model rules reads the model only. Everything in
 [`rules.yaml`](../RULES_CATALOGUE.md) works for Lua unchanged.
 
 ```bash
@@ -183,19 +183,19 @@ Delete `---@cdec sealed` from `Receipt` and re-run:
   Architectural tag drift: the rule 'sealed' on 'orders.Receipt' was removed.
 ```
 
-Engine A is the strongest of the three on Lua, because it needs no type information — it
+the model rules is the strongest of the three on Lua, because it needs no type information — it
 works off the model's shape, which the parser recovers reliably.
 
 ---
 
-## 5. Engine B — implementation conformance (`cdec enforce`)
+## 5. `tag-conformance` — implementation conformance (the `tag-conformance` rule)
 
 ```bash
-cdec enforce examples/lua_demo --lang lua
+cdec check --config examples/lua_demo/.cdec --source examples/lua_demo
 ```
 
 ```
-cdec enforce: 2 conformance violation(s):
+[tags-must-be-honoured] (error) — 2 finding(s):
   - [F-4E5B2B91] [factory] orders/billing.lua:103: 'orders.CheckoutService.quick_receipt'
       constructs 'Receipt' outside its designated factory (ReceiptFactory).
   - [F-5BBDCC93] [no-instantiation] orders/billing.lua:103: 'orders.CheckoutService.quick_receipt'
@@ -214,7 +214,7 @@ Lua construction has no syntax of its own, so `cdec` recognises **two idioms**:
 
 Constructor names recognised: `new`, `create`, `init`, `_init`, `_new`.
 
-If your codebase uses a different constructor convention, Engine B will under-report. That
+If your codebase uses a different constructor convention, `tag-conformance` will under-report. That
 is the honest trade — a looser heuristic would flag every ordinary call.
 
 **`immutable`** flags `self.x = …` outside the constructor, where "the constructor" means a
@@ -242,21 +242,21 @@ local CheckoutService = {}
 Or record a one-off in the ledger:
 
 ```bash
-cdec baseline allow F-5BBDCC93 --config examples/lua_demo/.cdec --reason "legacy path, ticket #142"
+cdec exceptions allow F-5BBDCC93 --config examples/lua_demo/.cdec --reason "legacy path, ticket #142"
 ```
 
 ---
 
-## 6. Engine C — implementation freeze (`cdec lock`)
+## 6. `implementation-locks` — implementation freeze (the `implementation-locks` rule)
 
 ```bash
-cdec lock list examples/lua_demo --lang lua --config examples/lua_demo/.cdec
+cdec locks examples/lua_demo --lang lua --config examples/lua_demo/.cdec
 # ok   orders.Receipt.formatted  method  (tag)  orders/billing.lua:45
 ```
 
 ```bash
-cdec lock set   examples/lua_demo --lang lua --config examples/lua_demo/.cdec --reason "…"
-cdec lock check examples/lua_demo --lang lua --config examples/lua_demo/.cdec
+cdec check --automatic-exceptions locks   examples/lua_demo --lang lua --config examples/lua_demo/.cdec --reason "…"
+cdec check examples/lua_demo --lang lua --config examples/lua_demo/.cdec
 ```
 
 **A Lua "class" is not one node.** The table-plus-metatable idiom spreads a class across
@@ -281,7 +281,7 @@ All the usual invariants hold — these leave the digest untouched:
 Re-baselining a genuine change stays privileged:
 
 ```bash
-cdec lock set examples/lua_demo --lang lua --target orders.Receipt.formatted --force --reason "…"
+cdec check --automatic-exceptions locks examples/lua_demo --lang lua --target orders.Receipt.formatted --force --reason "…"
 ```
 
 ---
@@ -308,17 +308,16 @@ object, and is modelled as one.
 same file. If you split a class across files, the methods land on the file's `static` module
 class instead.
 
-**Engine B under-reports by design.** If construction in your codebase doesn't look like
-`T.new(…)` or `setmetatable(t, T)`, it isn't detected. Lean on Engine A (layering, frozen
-tags) and Engine C (locks) — both are fully reliable on Lua.
+**`tag-conformance` under-reports by design.** If construction in your codebase doesn't look like
+`T.new(…)` or `setmetatable(t, T)`, it isn't detected. Lean on the model rules (layering, frozen
+tags) and `implementation-locks` (locks) — both are fully reliable on Lua.
 
 ---
 
 ## 8. CI
 
 ```yaml
-- run: cdec check   --config .cdec --source .   # Engine A + C
-- run: cdec enforce . --lang lua                # Engine B
+- run: cdec check   --config .cdec --source .   # the model rules + C
 ```
 
 See [Tutorial Part 9](../TUTORIAL.md#part-9--wiring-up-cicd) for full workflows.

@@ -4,7 +4,7 @@
 
 Lua carries no type annotations, so its attributes and signatures are name-only — and the reference gate still protects them. An attribute here is a `self.x = …` in some method, so **deleting an assignment is an `attribute-removed` deviation**, which is a stronger guarantee than it first appears in a language with no declarations at all.
 
-**Engine:** D — reference gate — `cdec reference test`  
+**Engine:** D — reference gate — the `reference-architecture` rule  
 **Constraint:** [`Reference deviations`](../../../../../docs/RULES_CATALOGUE.md#3--the-reference-gate)  
 **Language:** Lua  
 **Runner:** `tests/case_runner.py::_run_reference`
@@ -73,7 +73,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec reference test` is a **wall**, not a scalpel: any structural deviation from the committed `.cdec/reference.xmi` fails, with no per-rule configuration at all.
+1. The `reference-architecture` rule is a **wall**, not a scalpel: any structural deviation from the committed `.cdec/reference.xmi` fails, with no per-rule configuration at all.
 2. It runs a **dedicated field-by-field comparator** (`reference/compare.py`), not the diff engine — which is why it catches things `frozen-members` structurally cannot.
 3. Classes are matched by **qualified name**; attributes by **name within the class**; operations by **name within the class**, with a full-signature fallback for overload groups.
 4. **Because operations match by name, a changed parameter list reads as one `operation-signature-changed`** — not as the removed + added pair `frozen-members` produces. The messages are meant to read as "changed", and this is the price and the point.

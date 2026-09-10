@@ -1,9 +1,9 @@
 """The review file: render issues for a human, read their decisions back.
 
-This is the round trip the whole feature exists for. `cdec baseline review`
+This is the round trip the whole feature exists for. `cdec exceptions review`
 writes a plain-text report where every issue occupies one line and leads with
 its key. A reviewer (or an agent) marks the lines they accept with `[ALLOW]`
-and hands the file to `cdec baseline patch`, which applies exactly those.
+and hands the file to `cdec exceptions patch`, which applies exactly those.
 
 The parser is deliberately forgiving, because the file is meant to be edited by
 hand and pasted between tools: any line carrying a marker and a key counts, no
@@ -25,10 +25,13 @@ from code_constraints.waivers.model import Issue
 ALLOW_RE = re.compile(r"\[\s*ALLOW\s*(?::\s*([^\]]*?))?\s*\]", re.IGNORECASE)
 REMOVE_RE = re.compile(r"\[\s*(?:REMOVE|UNALLOW|DENY)\s*(?::\s*([^\]]*?))?\s*\]", re.IGNORECASE)
 
+# Order matters: the review file groups by engine in this order, so a reviewer
+# reads the cheap decisions before the ones that need a lead.
 _ENGINE_HEADINGS: dict[str, str] = {
-    "check": "cdec check — architectural drift (Engine A)",
-    "enforce": "cdec enforce — implementation conformance (Engine B)",
-    "lock": "cdec lock — frozen implementations (Engine C)",
+    "check": "configured architectural rules",
+    "enforce": "source-tag conformance — does the implementation obey its tags",
+    "reference": "reference-architecture gate — structural deviation",
+    "lock": "frozen implementations",
 }
 
 
@@ -102,17 +105,17 @@ def render_review(issues: Iterable[Issue], *, include_waived: bool = False) -> s
         lines.append("")
         return "\n".join(lines) + "\n"
 
-    for engine in ("check", "enforce", "lock"):
+    for engine in _ENGINE_HEADINGS:
         group = [i for i in items if i.engine == engine]
         if not group:
             continue
         lines.append("")
         heading = _ENGINE_HEADINGS.get(engine, engine)
         lines.append(f"## {heading} — {len(group)} issue(s)")
-        if engine == "lock":
+        if any(not i.waivable for i in group):
             lines.append(
-                "## NOT WAIVABLE: a frozen implementation changes only via "
-                "`cdec lock set --force`."
+                "## NOT EXCEPTABLE: a frozen implementation changes only via "
+                "`cdec check --automatic-exceptions locks --force`."
             )
         lines.append("")
         for issue in sorted(group, key=lambda i: (i.rule, i.qualified_name, i.detail)):
@@ -128,7 +131,7 @@ def render_issue_line(issue: Issue) -> str:
     because a reviewer marks lines, and a decision must be readable from the
     line it is written on.
     """
-    prefix = "- [WAIVED] " if issue.waived else "- "
+    prefix = "- [ACCEPTED] " if issue.waived else "- "
     loc = f" [{issue.location}]" if issue.location else ""
     message = " ".join((issue.message or "").split())
     return (
@@ -142,11 +145,11 @@ _HEADER = [
     "#",
     "# One line per issue. To accept an issue as known-and-allowed, add [ALLOW]",
     "# anywhere on its line; add a reason with [ALLOW: why this is acceptable].",
-    "# To withdraw an existing waiver, mark the line [REMOVE].",
+    "# To withdraw an exception already granted, mark the line [REMOVE].",
     "# Lines starting with # are ignored, so commenting one out cancels it.",
     "#",
     "# Then apply the file:",
-    "#     cdec baseline patch --file <this file>",
+    "#     cdec exceptions patch --file <this file>",
     "#",
     "# Example:",
     "#     - [ALLOW: legacy, tracked in ARCH-42] [V-1A2B3C4D] [error] [no-new-classes] ...",

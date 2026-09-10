@@ -1,4 +1,4 @@
-"""Structural comparator for the architecture-reference gate (`cdec reference test`).
+"""Structural comparator for the `reference-architecture` rule.
 
 Decoupled from `code_constraints.core.diff` on purpose. `diff_projects` matches members by
 `signature()` and only marks a matched member CHANGED when its *rule tags* differ,

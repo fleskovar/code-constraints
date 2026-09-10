@@ -1,10 +1,10 @@
-"""Engine A's view of `.cdec/baseline.yaml`.
+"""The rule engine's view of the `exceptions:` ledger.
 
 The file itself is owned by `code_constraints.waivers.store`, which is engine-
-agnostic; this module is the thin adapter that turns lint `Violation`s into
-lookups against it. Keeping the file format in one place is what lets a waiver
-granted from a reviewed report and one recorded by `--update-baseline` land in
-the same ledger.
+agnostic; this module is the thin adapter that turns `Violation`s into lookups
+against it. Keeping the file format in one place is what lets an exception
+granted from a reviewed report and one recorded by
+`cdec check --automatic-exceptions` land in the same list.
 """
 
 from __future__ import annotations
@@ -28,7 +28,10 @@ class Baseline:
     store: WaiverStore = field(default_factory=WaiverStore)
 
     def contains(self, v: Violation) -> bool:
-        return self.store.has(v.key())
+        # Locks are never exempted: `Violation.waivable` is False for them, and
+        # honouring an `exceptions:` entry here would be a silent back door
+        # around the privileged re-baseline.
+        return v.waivable and self.store.has(v.key())
 
     def filter(
         self, violations: list[Violation]
@@ -40,25 +43,27 @@ class Baseline:
         return kept, suppressed
 
 
-def load_baseline(path: Path) -> Baseline:
-    return Baseline(store=load_waivers(path))
+def load_baseline(config_dir: Path) -> Baseline:
+    return Baseline(store=load_waivers(config_dir))
 
 
-def write_baseline(path: Path, violations: Iterable[Violation]) -> None:
-    """Record `violations` as the accepted set for Engine A.
+def write_baseline(config_dir: Path, violations: Iterable[Violation]) -> Path:
+    """Grandfather `violations` as the accepted set — `--automatic-exceptions`.
 
-    Conformance waivers (Engine B) in the same file are preserved: they were
-    granted by a separate decision and re-snapshotting drift must not quietly
-    revoke them.
+    Every engine's exceptions are rewritten together, because the violations
+    handed in come from one run of every rule. Non-waivable violations (locks)
+    are dropped rather than recorded: accepting one of those is a privileged
+    re-baseline, never an exception. Reason / author / date already recorded for
+    an issue are carried over, so re-running never erases why something was
+    accepted. Returns the file written.
     """
-    store = load_waivers(path)
+    store = load_waivers(config_dir)
     stamp = now_stamp()
-    store.replace_engine(
-        "check",
+    store.replace_all(
         [
             Waiver(
-                engine="check",
-                rule=v.rule_id,
+                engine=v.key_engine,
+                rule=v.key_rule or v.rule_id,
                 qualified_name=v.qualified_name,
                 detail=v.signature or "",
                 reason=_existing_reason(store, v),
@@ -66,9 +71,10 @@ def write_baseline(path: Path, violations: Iterable[Violation]) -> None:
                 added_by=_existing_actor(store, v),
             )
             for v in violations
-        ],
+            if v.waivable
+        ]
     )
-    save_waivers(path, store)
+    return save_waivers(config_dir, store)
 
 
 def _existing(store: WaiverStore, v: Violation) -> Waiver | None:

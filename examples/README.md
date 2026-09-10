@@ -20,8 +20,8 @@ same domain. They exist to show how the rule tags read in languages with **no
 `class` construct**, where an operation belongs to the type of its first
 argument (Odin `proc(r: ^Receipt, …)`, Julia `formatted(r::Receipt)`) or to its
 table (Lua `function Receipt:formatted()`). Each is the canonical end-to-end
-demo for its language: `cdec check` passes, `cdec lock check` verifies the
-frozen `Receipt.formatted`, and `cdec enforce` reports exactly the two seeded
+demo for its language: `cdec check` passes, `cdec check` verifies the
+frozen `Receipt.formatted`, and the `tag-conformance` rule reports exactly the two seeded
 findings in `quick_receipt`.
 
 ```bash
@@ -135,12 +135,12 @@ for *implementation*:
 # never inspects method bodies. PASSES on the demo (architecture is intact).
 .venv/Scripts/python.exe -m code_constraints.cli check --config examples/python_demo/.cdec --source examples/python_demo
 
-# Engine B — `cdec enforce` (implementation conformance): re-parses the source
+# Engine B — the `tag-conformance` rule (implementation conformance): re-parses the source
 # and inspects method bodies. FLAGS the seeded violation below.
 .venv/Scripts/python.exe -m code_constraints.cli enforce examples/python_demo --lang python
 ```
 
-`cdec enforce` reports the **one intentional violation** baked into each demo —
+the `tag-conformance` rule reports the **one intentional violation** baked into each demo —
 `CheckoutService.quick_receipt` builds a `Receipt` directly instead of going
 through the factory, tripping *both* the `no-instantiation` and `factory` rules:
 
@@ -154,7 +154,7 @@ Delete that method (or change it to `return self.receipts.for_cart(cart)`) and
 the run goes green. Swap `python` → `csharp` and the path for the C# demo, which
 seeds the identical violation in `CheckoutService.QuickReceipt`.
 
-Run both engines together with `cdec check --enforce`: the lint section passes
+Run both engines together with `cdec check`: the lint section passes
 while the conformance section flags the body bug — the clearest illustration of
 why the two are decoupled.
 
@@ -163,8 +163,8 @@ why the two are decoupled.
 Both demos enable a `frozen-rules` lint that freezes the tags recorded in
 `reference.xmi`. Remove a tag — e.g. delete `@sealed` from `Receipt` — and
 re-run `cdec check`: it fails because an architectural constraint was dropped.
-(It never inspects bodies — that's `cdec enforce`'s job.) Run
-`cdec check --update-reference` to deliberately accept a new baseline.
+(It never inspects bodies — that's the `tag-conformance` rule's job.) Run
+`cdec check --automatic-exceptions reference` to deliberately accept a new baseline.
 
 ## Trying the diff view
 

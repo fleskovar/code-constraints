@@ -6,7 +6,7 @@
 > repository root.
 
 Python is the most fully supported language: everything works, including activity and
-sequence diagrams. It is also the language where Engine B's construction detection is
+sequence diagrams. It is also the language where `tag-conformance`'s construction detection is
 **heuristic** — the one place you should expect to reach for `allow=[…]`.
 
 | | |
@@ -95,7 +95,7 @@ Aliased imports work: `from cdec_rules import sealed as final` is still recognis
 
 ---
 
-## 4. Engine A — architectural drift (`cdec check`)
+## 4. the model rules — architectural drift (`cdec check`)
 
 ```bash
 cdec check --config examples/python_demo/.cdec --source examples/python_demo
@@ -112,14 +112,14 @@ Delete `@sealed` from `orders.billing.Receipt` and re-run to watch `frozen-rules
 
 ---
 
-## 5. Engine B — implementation conformance (`cdec enforce`)
+## 5. `tag-conformance` — implementation conformance (the `tag-conformance` rule)
 
 ```bash
-cdec enforce examples/python_demo --lang python
+cdec check --config examples/python_demo/.cdec --source examples/python_demo
 ```
 
 ```
-cdec enforce: 2 conformance violation(s):
+[tags-must-be-honoured] (error) — 2 finding(s):
   - [factory]          'CheckoutService.quick_receipt' constructs 'Receipt' outside
                        its designated factory (ReceiptFactory).
   - [no-instantiation] 'CheckoutService.quick_receipt' is tagged @no_instantiation
@@ -150,17 +150,17 @@ class's base list.
 For a one-off you disagree with, record it in the reviewable ledger:
 
 ```bash
-cdec baseline review --config examples/python_demo/.cdec --out review.txt
+cdec exceptions review --config examples/python_demo/.cdec --out review.txt
 # mark lines with [ALLOW], then:
-cdec baseline patch --config examples/python_demo/.cdec --file review.txt
+cdec exceptions patch --config examples/python_demo/.cdec --file review.txt
 ```
 
 ---
 
-## 6. Engine C — implementation freeze (`cdec lock`)
+## 6. `implementation-locks` — implementation freeze (the `implementation-locks` rule)
 
 ```bash
-cdec lock list examples/python_demo --lang python --config examples/python_demo/.cdec
+cdec locks examples/python_demo --lang python --config examples/python_demo/.cdec
 # ok   orders.Receipt.formatted  method  (tag)  orders/billing.py:43
 ```
 
@@ -211,7 +211,7 @@ skipped, never fatal.
 
 **Forgot the shim import → no tags at all**, silently. The most common Python mistake.
 
-**Engine B over-reports on Capitalised callees.** That's the documented trade for having no
+**`tag-conformance` over-reports on Capitalised callees.** That's the documented trade for having no
 type resolution. Use `allow=[…]`.
 
 **Two attributes with the same signature is legal** — a class-scope `species: str` plus
@@ -223,8 +223,7 @@ signature to cope.
 ## 9. CI
 
 ```yaml
-- run: cdec check   --config .cdec --source .   # Engine A + C
-- run: cdec enforce . --lang python             # Engine B
+- run: cdec check   --config .cdec --source .   # the model rules + C
 ```
 
 See [Tutorial Part 9](../TUTORIAL.md#part-9--wiring-up-cicd) for full workflows.

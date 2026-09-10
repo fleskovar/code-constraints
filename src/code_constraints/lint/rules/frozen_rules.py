@@ -29,6 +29,8 @@ class FrozenRules(Rule):
     Scope must be `diff` — it needs a baseline to compare against.
     """
 
+    default_scope = "diff"
+
     def check(self, ctx: RuleContext) -> Iterable[Violation]:
         if not ctx.has_diff:
             return

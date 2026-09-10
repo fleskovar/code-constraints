@@ -2,9 +2,9 @@
 
 Every tool calls the library in-process rather than shelling out to `cdec`, for
 two reasons: results come back as structured JSON instead of human text, and the
-issue keys (`V-`/`F-`/`L-`) are derived by exactly the same code path the CLI
-uses — so a key an agent reads from `cdec_check` is the same key
-`cdec baseline allow` accepts on the command line.
+issue keys (`V-`/`F-`/`L-`/`R-`) are derived by exactly the same code path the
+CLI uses — so a key an agent reads from `cdec_check` is the same key
+`cdec exceptions allow` accepts on the command line.
 
 Path arguments are resolved against the server's project root (`--project-root`,
 `$CDEC_PROJECT_ROOT`, else the process CWD), so an agent can pass repo-relative
@@ -24,17 +24,17 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional, cast, get_args
 from urllib.parse import quote
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from code_constraints.core.rulesdoc import RULES_FILENAME
 from code_constraints.lint.config import (
-    BASELINE_FILENAME,
-    LOCKS_FILENAME,
     REFERENCE_FILENAME,
     ConfigError,
+    legacy_files,
     load_project_config,
     load_rules,
 )
@@ -43,8 +43,8 @@ if TYPE_CHECKING:
     # Annotation-only: the engines are imported lazily inside each tool so that
     # building the server (which every harness does at startup) stays cheap.
     from code_constraints.core.model import Project
-    from code_constraints.lock import LockEntry, LockOptions
-    from code_constraints.waivers import ApplyResult, Collected, Issue, WaiverStore
+    from code_constraints.lint.config import LoadedRules, ProjectConfig
+    from code_constraints.waivers import ApplyResult, Collected, Issue
 
 Language = Literal[
     "python", "csharp", "typescript", "svelte", "odin", "lua", "julia"
@@ -52,20 +52,31 @@ Language = Literal[
 
 SERVER_INSTRUCTIONS = """\
 code-constraints (`cdec`) enforces architectural and implementation constraints \
-on a codebase. Three decoupled engines answer three different questions:
+on a codebase. Everything lives in one committed file, `.cdec/rules.yaml`: the \
+settings, the rules enforced, the exceptions granted, and the digests of frozen \
+implementations.
 
-  * `cdec_check`      (Engine A) — did the architecture DRIFT from the reference?
-  * `cdec_enforce`    (Engine B) — does the code OBEY its rule tags right now?
-  * `cdec_lock_check` (Engine C) — did a frozen implementation CHANGE at all?
+`cdec_check` is the whole gate. Four kinds of rule run inside it, and each one
+carries its own key prefix so you can tell them apart:
+
+  * V- configured architectural rules — drift, dependencies, naming, shape
+  * F- `tag-conformance` ............. does the code OBEY its @sealed /
+                                       @immutable / @factory / @no_instantiation
+                                       tags, checked in the method bodies
+  * L- `implementation-locks` ........ did an @locked body CHANGE at all
+  * R- `reference-architecture` ...... any structural deviation from
+                                       .cdec/reference.xmi
 
 Typical flows:
 
-  Gate a change      -> cdec_check(enforce=True). It runs A + B + C together.
-  Triage everything  -> cdec_issues, which returns one keyed list across engines.
+  Gate a change      -> cdec_check. One call, one verdict.
+  Triage everything  -> cdec_issues, one keyed list across every rule.
   Accept a violation -> cdec_allow(keys=["V-1A2B3C4D"], reason="why").
-                        Locks are NOT waivable; re-baseline with
-                        cdec_lock_set(force=True) instead, which leaves a
-                        reviewable diff on .cdec/locks.yaml.
+                        Locks are NOT acceptable this way; approve one with
+                        cdec_accept(what=["locks"], force=True), which leaves a
+                        reviewable diff on the `locks:` section of rules.yaml.
+  Adopt on old code  -> cdec_accept(what=["rules"]) grandfathers today's
+                        violations so only NEW ones fail.
   Agree a design     -> write a model .json, cdec_propose it (the browser shows
                         it diffed against the code), iterate, then
                         cdec_reference_set to lock it as the target.
@@ -148,8 +159,9 @@ def _resolve_inputs(
     source_path = roots.path(source) or (cfg.source if cfg else None)
     if source_path is None:
         raise ToolError(
-            f"no source given and none found in {_rel(roots, cfg_dir / 'config.yaml')}; "
-            "pass `source`, or scaffold the project with `cdec init`."
+            f"no source given and none found in "
+            f"{_rel(roots, cfg_dir / RULES_FILENAME)}; pass `source`, or scaffold "
+            f"the project with `cdec init`."
         )
     if not source_path.is_dir():
         raise ToolError(f"source is not a directory: {source_path}")
@@ -159,9 +171,7 @@ def _resolve_inputs(
         raise ToolError(
             f"could not determine a language for {_rel(roots, source_path)}; pass `lang`."
         )
-    if chosen not in (
-        "python", "csharp", "typescript", "svelte", "odin", "lua", "julia",
-    ):
+    if chosen not in get_args(Language):
         raise ToolError(f"unsupported language: {chosen}")
 
     ref = roots.path(reference)
@@ -210,40 +220,31 @@ def _save_model(project: "Project", path: Path) -> None:
         raise ToolError(str(exc)) from exc
 
 
-def _lock_inputs(
-    roots: _Roots, source: Path, lang: str, cfg_dir: Path, lockfile: str | None
-) -> tuple[Path, dict[str, "LockEntry"], "LockOptions"]:
-    """(lockfile_path, entries, LockOptions) resolved like the CLI's `_lock_context`."""
-    from code_constraints.lock import LockOptions, LockfileError, load_locks
-
-    cfg = None
+def _project(roots: _Roots, config_dir: str | None) -> tuple[Path, "ProjectConfig", "LoadedRules"]:
+    """(config_dir, settings, rules) — everything read out of `.cdec/rules.yaml`."""
+    cfg_dir = roots.config_dir(config_dir)
     try:
-        cfg = load_project_config(cfg_dir)
-    except ConfigError:
-        cfg = None
-
-    path = roots.path(lockfile)
-    if path is None:
-        path = (
-            cfg.lock.lockfile
-            if cfg is not None and cfg.lock.lockfile is not None
-            else cfg_dir / LOCKS_FILENAME
-        )
-    options = LockOptions(
-        include_docstrings=cfg.lock.include_docstrings if cfg else False,
-        patterns=list(cfg.lock.targets) if cfg else [],
-    )
-    try:
-        entries = load_locks(path)
-    except LockfileError as exc:
+        return cfg_dir, load_project_config(cfg_dir), load_rules(cfg_dir)
+    except ConfigError as exc:
         raise ToolError(str(exc)) from exc
-    return path, entries, options
+
+
+def _source_context(roots: _Roots, cfg_dir: Path, cfg: "ProjectConfig", source: Path,
+                    reference: Path | None) -> Any:
+    from code_constraints.lint.engine import SourceContext
+
+    return SourceContext(
+        source=source,
+        language=cfg.language,
+        config_dir=cfg_dir,
+        reference_path=reference or cfg.reference_path,
+    )
 
 
 def _collect(
     roots: _Roots, config_dir: str | None, **opts: Any
 ) -> tuple[Path, "Collected"]:
-    """Run all three engines and return the keyed `Collected` issue list."""
+    """Run every rule and return the keyed `Collected` issue list."""
     from code_constraints.lint.pipeline import PipelineError
     from code_constraints.waivers import CollectOptions, collect_issues
     from code_constraints.waivers.store import WaiverFileError
@@ -268,6 +269,7 @@ def _issue_json(issue: "Issue") -> dict[str, Any]:
         "key": issue.key,
         "engine": issue.engine,
         "rule": issue.rule,
+        "rule_id": issue.rule_id,
         "qualified_name": issue.qualified_name,
         "detail": issue.detail,
         "message": issue.message,
@@ -326,75 +328,82 @@ def build_server(project_root: Path | None = None) -> MCPServer:
     def cdec_status(config_dir: Optional[str] = None) -> dict[str, Any]:
         """Show how code-constraints is configured for this project.
 
-        Start here when you don't know whether a repo uses cdec, which engines
-        are active, or where its reference model and ledgers live.
+        Start here when you don't know whether a repo uses cdec, which rules are
+        active, or where its reference model lives.
         """
         cfg_dir = roots.config_dir(config_dir)
+        rules_file = cfg_dir / RULES_FILENAME
         out: dict[str, Any] = {
             "project_root": str(roots.project_root),
             "config_dir": _rel(roots, cfg_dir),
+            "rules_file": _rel(roots, rules_file),
             "configured": False,
         }
         try:
             cfg = load_project_config(cfg_dir)
         except ConfigError as exc:
             out["error"] = str(exc)
-            out["hint"] = "Run `cdec init` in the project to scaffold `.cdec/`."
+            out["hint"] = "Run `cdec init` in the project to scaffold `.cdec/rules.yaml`."
             return out
 
-        ref = cfg.reference or (cfg_dir / REFERENCE_FILENAME)
-        baseline_path = cfg_dir / BASELINE_FILENAME
-        lock_path = cfg.lock.lockfile or (cfg_dir / LOCKS_FILENAME)
-
-        n_rules = 0
+        ref = cfg.reference_path
+        rules: list[dict[str, Any]] = []
         rules_error = None
         try:
-            n_rules = len(load_rules(cfg_dir).rules)
+            for rule in load_rules(cfg_dir).rules:
+                rules.append(
+                    {"id": rule.rule_id, "type": rule.type_name,
+                     "severity": rule.severity.value, "scope": rule.scope}
+                )
         except ConfigError as exc:
             rules_error = str(exc)
 
-        n_waivers = 0
+        n_exceptions = 0
         try:
             from code_constraints.waivers import load_waivers
 
-            n_waivers = len(load_waivers(baseline_path).waivers)
+            n_exceptions = len(load_waivers(cfg_dir).waivers)
         except Exception as exc:  # noqa: BLE001 - reported, not fatal
-            out["baseline_error"] = str(exc)
+            out["exceptions_error"] = str(exc)
 
         n_locks = 0
         try:
             from code_constraints.lock import load_locks
 
-            n_locks = len(load_locks(lock_path))
+            n_locks = len(load_locks(cfg_dir))
         except Exception as exc:  # noqa: BLE001 - reported, not fatal
-            out["lockfile_error"] = str(exc)
+            out["locks_error"] = str(exc)
 
+        stale = [_rel(roots, path) for path in legacy_files(cfg_dir)]
         out.update(
             {
                 "configured": True,
                 "language": cfg.language,
                 "source": _rel(roots, cfg.source),
                 "reference": {"path": _rel(roots, ref), "exists": ref.is_file()},
-                "rules": {"count": n_rules, "error": rules_error},
-                "waivers": {"path": _rel(roots, baseline_path), "count": n_waivers},
-                "locks": {
-                    "enabled": cfg.lock.enabled,
-                    "path": _rel(roots, lock_path),
-                    "count": n_locks,
-                    "targets": list(cfg.lock.targets),
-                    "include_docstrings": cfg.lock.include_docstrings,
-                },
+                "rules": rules,
+                "rules_error": rules_error,
+                "exceptions": n_exceptions,
+                "locks": n_locks,
             }
         )
+        if stale:
+            out["legacy_files"] = stale
+            out["legacy_hint"] = (
+                "These per-concern files are superseded by rules.yaml. They are still "
+                "read; fold them in with `cdec init --migrate`."
+            )
         return out
 
     @mcp.tool()
     def cdec_rules() -> dict[str, Any]:
-        """List the architectural rule tags that can be applied to code.
+        """List the constraint tags that can be written on code.
 
-        These are the decorators/attributes (`@no_instantiation`, `[Sealed]`, …)
-        that Engines A and B read. Use this before adding a tag so you use the
-        real name, its legal targets, and its parameters.
+        These are the decorators/attributes/macros (`@no_instantiation`,
+        `[Sealed]`, `---@cdec layer(...)`, …) that the `tag-conformance`,
+        `frozen-rules`, `layer-dependencies` and `implementation-locks` rules
+        read. Use this before adding a tag so you use the real name, its legal
+        targets, and its parameters.
         """
         from code_constraints.core.rules import (
             CSHARP_SHIM_NAMESPACE,
@@ -425,7 +434,34 @@ def build_server(project_root: Path | None = None) -> MCPServer:
             ],
         }
 
-    # ------------------------------------------------------------ the engines
+    @mcp.tool()
+    def cdec_rule_types() -> dict[str, Any]:
+        """List the rule types that can appear in `.cdec/rules.yaml`.
+
+        Use this before writing a rule so you use a `type:` that exists. Each
+        entry says which key prefix its violations carry and whether it can
+        record a baseline of its own.
+        """
+        from code_constraints.lint.rules import get_rule_class, known_rule_types
+
+        out = []
+        for name in known_rule_types():
+            cls = get_rule_class(name)
+            assert cls is not None
+            out.append(
+                {
+                    "type": name,
+                    "default_scope": cls.default_scope,
+                    "reads_source": name in (
+                        "tag-conformance", "implementation-locks", "reference-architecture"
+                    ),
+                    "baselines_itself": cls.supports_auto_accept,
+                    "summary": (cls.__doc__ or "").strip().splitlines()[0] if cls.__doc__ else "",
+                }
+            )
+        return {"rule_types": out}
+
+    # ------------------------------------------------------------- the gate
 
     @mcp.tool()
     def cdec_check(
@@ -434,42 +470,40 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         reference: Optional[str] = None,
         base_ref: Optional[str] = None,
         repo: Optional[str] = None,
-        enforce: bool = False,
-        locks: bool = True,
         fail_on: Literal["error", "warning", "none"] = "error",
+        bypass_locks: bool = False,
+        bypass_reason: str = "",
     ) -> dict[str, Any]:
-        """Engine A: check the architecture for drift against the reference model.
+        """Check the project against every rule in `.cdec/rules.yaml`.
 
-        Runs the `.cdec/rules.yaml` rule set over the parsed model — it never
-        reads method bodies. Set `enforce=True` to also run Engine B, and leave
-        `locks=True` so a frozen implementation is verified by the same call CI
-        makes. `base_ref` diffs against a git revision instead of the reference
-        XMI; diff-scope rules are skipped (and reported in `skipped`) when
-        neither baseline is available.
+        This is the whole gate — configured architectural rules, source-tag
+        conformance, implementation locks and the reference-architecture check
+        all run here, because they are all rule types in that one file.
+
+        `base_ref` diffs against a git revision instead of the reference model;
+        `scope: diff` rules are skipped (and named in `skipped`) when neither
+        baseline is available, so a rule that could not run never looks like one
+        that passed.
 
         `ok` is the pass/fail verdict. Every violation carries a `key` that
-        `cdec_allow` accepts.
+        `cdec_allow` accepts — except lock violations, which are not acceptable
+        that way.
         """
         from code_constraints.lint.baseline import load_baseline
         from code_constraints.lint.engine import run_checks
         from code_constraints.lint.pipeline import PipelineError, resolve_baseline
         from code_constraints.lint.rules.base import Severity
 
-        cfg_dir = roots.config_dir(config_dir)
-        try:
-            cfg = load_project_config(cfg_dir)
-            loaded = load_rules(cfg_dir)
-        except ConfigError as exc:
-            raise ToolError(str(exc)) from exc
-
+        cfg_dir, cfg, loaded = _project(roots, config_dir)
         source_path = roots.path(source) or cfg.source
+        ref_path = roots.path(reference)
         head = _parse(source_path, cfg.language)
         try:
             annotated, has_diff, base_proj = resolve_baseline(
                 head_proj=head,
                 lang=cfg.language,
                 config_dir=cfg_dir,
-                explicit_reference=roots.path(reference),
+                explicit_reference=ref_path,
                 explicit_base_ref=base_ref,
                 repo_path=roots.path(repo) or roots.project_root,
                 default_reference=cfg.reference,
@@ -477,172 +511,184 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         except PipelineError as exc:
             raise ToolError(str(exc)) from exc
 
-        baseline = load_baseline(cfg_dir / BASELINE_FILENAME)
         report = run_checks(
             annotated,
             loaded.rules,
             has_diff=has_diff,
-            baseline=baseline,
+            baseline=load_baseline(cfg_dir),
             baseline_project=base_proj,
+            source_context=_source_context(roots, cfg_dir, cfg, source_path, ref_path),
+            bypass_locks=bypass_locks,
+            bypass_reason=bypass_reason,
         )
-
-        out: dict[str, Any] = {
-            "source": _rel(roots, source_path),
-            "language": cfg.language,
-            "has_baseline": has_diff,
-            "check": report.to_json(),
-            "text": report.to_human(),
-        }
-        failed = report.has_failures(Severity(fail_on))
-
-        if enforce:
-            from code_constraints.enforce import enforce as run_enforce
-            from code_constraints.enforce import findings_to_json, format_findings
-
-            findings = run_enforce(source_path, cfg.language)
-            kept = [
-                f
-                for f in findings
-                if not baseline.store.matches("enforce", f.rule, f.qualified_name, f.detail)
-            ]
-            silenced = len(findings) - len(kept)
-            out["enforce"] = {
-                "findings": findings_to_json(kept),
-                "suppressed": silenced,
-            }
-            out["text"] += format_findings(kept, suppressed=silenced)
-            failed = failed or bool(kept)
-
-        if locks and cfg.lock.enabled:
-            from code_constraints.lock import UnsupportedLockLanguage, check_locks
-            from code_constraints.lock import format_report as format_lock_report
-            from code_constraints.lock import report_to_json as lock_report_to_json
-
-            lock_path, entries, options = _lock_inputs(
-                roots, source_path, cfg.language, cfg_dir, None
-            )
-            opted_in = bool(entries or options.patterns)
-            try:
-                lock_report = check_locks(source_path, cfg.language, entries, options)
-            except UnsupportedLockLanguage as exc:
-                if opted_in:
-                    raise ToolError(str(exc)) from exc
-                lock_report = None
-            if lock_report is not None and (
-                lock_report.checked or lock_report.declared or lock_report.violations
-            ):
-                out["locks"] = lock_report_to_json(lock_report)
-                out["text"] += format_lock_report(lock_report)
-                failed = failed or not lock_report.ok
-
-        out["ok"] = not failed
-        return out
-
-    @mcp.tool()
-    def cdec_enforce(
-        source: Optional[str] = None,
-        lang: Optional[str] = None,
-        config_dir: Optional[str] = None,
-        include_waived: bool = False,
-    ) -> dict[str, Any]:
-        """Engine B: check that implementations obey their rule tags.
-
-        Re-parses the source and inspects method bodies for `no-instantiation`,
-        `factory` and `immutable`, plus the structural `sealed` rule. Fully
-        independent of the reference model and the diff. Findings already
-        accepted into `.cdec/baseline.yaml` are silenced unless
-        `include_waived=True`.
-        """
-        from code_constraints.enforce import enforce as run_enforce
-        from code_constraints.enforce import findings_to_json, format_findings
-
-        source_path, chosen, _ref, cfg_dir = _resolve_inputs(
-            roots, source, lang, None, config_dir
-        )
-        try:
-            findings = run_enforce(source_path, chosen)
-        except ValueError as exc:
-            raise ToolError(str(exc)) from exc
-
-        suppressed = 0
-        if not include_waived:
-            from code_constraints.waivers import load_waivers
-
-            store = load_waivers(cfg_dir / BASELINE_FILENAME)
-            kept = [
-                f
-                for f in findings
-                if not store.matches("enforce", f.rule, f.qualified_name, f.detail)
-            ]
-            suppressed = len(findings) - len(kept)
-            findings = kept
-
-        return {
-            "ok": not findings,
-            "source": _rel(roots, source_path),
-            "language": chosen,
-            "findings": findings_to_json(findings),
-            "suppressed": suppressed,
-            "text": format_findings(findings, suppressed=suppressed),
-        }
-
-    @mcp.tool()
-    def cdec_lock_check(
-        source: Optional[str] = None,
-        lang: Optional[str] = None,
-        config_dir: Optional[str] = None,
-        lockfile: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Engine C: verify that frozen (`@locked`) implementations are unchanged.
-
-        A lock is an AST identity, not a line range, so moving or reformatting
-        code around a locked element never trips it. Catches five things: an
-        edited body, a deleted element, a deleted tag, a tag that was never
-        baselined, and a digest-algorithm change.
-
-        Lock violations are NOT waivable. Accepting one means
-        `cdec_lock_set(force=True)`, which leaves a reviewable ledger diff.
-        """
-        from code_constraints.lock import UnsupportedLockLanguage, check_locks, format_report
-        from code_constraints.lock import report_to_json
-
-        source_path, chosen, _ref, cfg_dir = _resolve_inputs(
-            roots, source, lang, None, config_dir
-        )
-        lock_path, entries, options = _lock_inputs(roots, source_path, chosen, cfg_dir, lockfile)
-        try:
-            report = check_locks(source_path, chosen, entries, options)
-        except UnsupportedLockLanguage as exc:
-            raise ToolError(str(exc)) from exc
-
-        payload = report_to_json(report)
+        payload = report.to_json()
         payload.update(
             {
-                "ok": report.ok,
-                "lockfile": _rel(roots, lock_path),
-                "text": format_report(report),
+                "ok": not report.has_failures(Severity(fail_on)),
+                "source": _rel(roots, source_path),
+                "language": cfg.language,
+                "has_baseline": has_diff,
+                "rules_file": _rel(roots, cfg_dir / RULES_FILENAME),
+                "text": report.to_human(),
             }
         )
         return payload
 
     @mcp.tool()
-    def cdec_lock_list(
+    def cdec_accept(
+        what: list[Literal["rules", "locks", "reference"]],
+        config_dir: Optional[str] = None,
+        source: Optional[str] = None,
+        reference: Optional[str] = None,
+        base_ref: Optional[str] = None,
+        repo: Optional[str] = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Record the code as it stands now as approved, instead of failing on it.
+
+        The counterpart of `cdec check --automatic-exceptions`. Ask the user
+        before calling any of these — each one switches off detection the
+        project asked for:
+
+          "rules"     grandfather every current violation into `exceptions:`, so
+                      only NEW ones fail. The adoption move on an existing
+                      codebase.
+          "locks"     record digests for newly @locked elements. Safe on its own:
+                      without `force` it can only ADD locks, never erase evidence
+                      that a frozen body changed. With `force=True` it ACCEPTS a
+                      change to frozen code — only ever with explicit approval.
+          "reference" re-snapshot .cdec/reference.xmi from the current source,
+                      which erases the drift the reference existed to detect.
+
+        Order is fixed: the reference and the locks settle first, then the checks
+        re-run, and only what is still reported gets grandfathered — otherwise
+        you would write exceptions for issues the re-snapshot was about to erase.
+        """
+        from code_constraints.core.model import Project
+        from code_constraints.lint.baseline import write_baseline
+        from code_constraints.lint.engine import run_checks
+        from code_constraints.lint.pipeline import PipelineError, resolve_baseline
+        from code_constraints.lint.rules.base import RuleContext, RuleSkipped
+
+        accept = set(what)
+        if not accept:
+            raise ToolError("`what` must name at least one of: rules, locks, reference")
+        cfg_dir, cfg, loaded = _project(roots, config_dir)
+        source_path = roots.path(source) or cfg.source
+        ref_path = roots.path(reference)
+        ctx_info = _source_context(roots, cfg_dir, cfg, source_path, ref_path)
+
+        out: dict[str, Any] = {"ok": True, "recorded": {}, "skipped": []}
+        auto_ctx = RuleContext(
+            # `load_project_config` already validated the language against
+            # SUPPORTED_LANGUAGES, so this narrows rather than re-checks.
+            project=Project(source_language=cast(Language, cfg.language)),
+            has_diff=False,
+            source=ctx_info.source,
+            language=ctx_info.language,
+            config_dir=ctx_info.config_dir,
+            reference_path=ctx_info.reference_path,
+        )
+        for name, type_name in (
+            ("reference", "reference-architecture"),
+            ("locks", "implementation-locks"),
+        ):
+            if name not in accept:
+                continue
+            rules = loaded.of_type(type_name)
+            if not rules:
+                out["skipped"].append(
+                    {"what": name, "reason": f"no `{type_name}` rule in rules.yaml"}
+                )
+                continue
+            lines: list[str] = []
+            for rule in rules:
+                try:
+                    lines.extend(rule.accept_current_state(auto_ctx, force=force))
+                except RuleSkipped as exc:
+                    out["skipped"].append({"what": name, "reason": str(exc)})
+            out["recorded"][name] = lines
+
+        if "rules" in accept:
+            head = _parse(source_path, cfg.language)
+            try:
+                annotated, has_diff, base_proj = resolve_baseline(
+                    head_proj=head,
+                    lang=cfg.language,
+                    config_dir=cfg_dir,
+                    explicit_reference=ref_path,
+                    explicit_base_ref=base_ref,
+                    repo_path=roots.path(repo) or roots.project_root,
+                    default_reference=cfg.reference,
+                )
+            except PipelineError as exc:
+                raise ToolError(str(exc)) from exc
+            report = run_checks(
+                annotated,
+                loaded.rules,
+                has_diff=has_diff,
+                baseline=None,
+                baseline_project=base_proj,
+                source_context=ctx_info,
+            )
+            grandfathered = [v for v in report.violations if v.waivable]
+            write_baseline(cfg_dir, grandfathered)
+            out["recorded"]["rules"] = [
+                {"key": v.key(), "rule_id": v.rule_id, "qualified_name": v.qualified_name}
+                for v in grandfathered
+            ]
+            refused = [v for v in report.violations if not v.waivable]
+            if refused:
+                out["not_grandfathered"] = [
+                    {"key": v.key(), "qualified_name": v.qualified_name} for v in refused
+                ]
+                out["hint"] = (
+                    "Lock violations are never grandfathered as exceptions. Accept one "
+                    "with cdec_accept(what=['locks'], force=True), and only with the "
+                    "user's approval."
+                )
+        out["rules_file"] = _rel(roots, cfg_dir / RULES_FILENAME)
+        return out
+
+    @mcp.tool()
+    def cdec_locks(
         source: Optional[str] = None,
         lang: Optional[str] = None,
         config_dir: Optional[str] = None,
-        lockfile: Optional[str] = None,
     ) -> dict[str, Any]:
         """List which elements are lockable, which are tagged, and which are frozen.
 
         Use it to see what a `@locked` / `[Locked]` tag would cover before you
-        baseline it, and to spot tags that have never been recorded in the ledger.
+        write one, and to spot tags that have never been recorded in the ledger.
+        Verifying the locks is `cdec_check`; recording them is
+        `cdec_accept(what=["locks"])`.
         """
-        from code_constraints.lock import UnsupportedLockLanguage, collect_targets, is_locked_target
+        from code_constraints.lock import (
+            LockOptions,
+            UnsupportedLockLanguage,
+            collect_targets,
+            is_locked_target,
+            load_locks,
+        )
 
         source_path, chosen, _ref, cfg_dir = _resolve_inputs(
             roots, source, lang, None, config_dir
         )
-        lock_path, entries, options = _lock_inputs(roots, source_path, chosen, cfg_dir, lockfile)
+        from code_constraints.lint.rules.implementation_locks import ImplementationLocks
+
+        options = LockOptions()
+        try:
+            loaded = load_rules(cfg_dir)
+        except ConfigError:
+            loaded = None
+        if loaded is not None:
+            for rule in loaded.of_type("implementation-locks"):
+                # `of_type` matches on the registered name, so this always holds;
+                # the isinstance is what tells the type checker so.
+                if isinstance(rule, ImplementationLocks):
+                    options = rule.lock_options()
+                    break
+        entries = load_locks(cfg_dir)
         try:
             targets = collect_targets(source_path, chosen, options)
         except UnsupportedLockLanguage as exc:
@@ -664,7 +710,8 @@ def build_server(project_root: Path | None = None) -> MCPServer:
             )
         stale = [name for name in entries if name not in {t.target for t in targets}]
         return {
-            "lockfile": _rel(roots, lock_path),
+            "rules_file": _rel(roots, cfg_dir / RULES_FILENAME),
+            "rule_configured": bool(loaded and loaded.of_type("implementation-locks")),
             "targets": rows,
             "stale_entries": stale,
             "summary": {
@@ -673,76 +720,6 @@ def build_server(project_root: Path | None = None) -> MCPServer:
                 "baselined": sum(1 for r in rows if r["baselined"]),
                 "stale": len(stale),
             },
-        }
-
-    @mcp.tool()
-    def cdec_lock_set(
-        source: Optional[str] = None,
-        lang: Optional[str] = None,
-        config_dir: Optional[str] = None,
-        lockfile: Optional[str] = None,
-        target: Optional[list[str]] = None,
-        force: bool = False,
-        reason: str = "",
-        owner: str = "",
-        dry_run: bool = False,
-    ) -> dict[str, Any]:
-        """Record current implementations as the approved locked baseline.
-
-        Without `force` this only ADDS locks for newly tagged elements — it can
-        never erase evidence that frozen code changed, so it is always safe to
-        run. `force=True` is the privileged operation: it re-baselines drifted
-        implementations and prunes stale entries, i.e. it ACCEPTS a change to
-        frozen code. Only use it when the user has explicitly approved that
-        change; it is meant to show up as a reviewable `.cdec/locks.yaml` diff.
-        """
-        from code_constraints.lock import update_locks, write_locks
-
-        source_path, chosen, _ref, cfg_dir = _resolve_inputs(
-            roots, source, lang, None, config_dir
-        )
-        lock_path, entries, options = _lock_inputs(roots, source_path, chosen, cfg_dir, lockfile)
-        try:
-            updated, result = update_locks(
-                source_path,
-                chosen,
-                entries,
-                options,
-                only=list(target or []),
-                force=force,
-                reason=reason,
-                owner=owner,
-            )
-        except Exception as exc:  # noqa: BLE001 - surfaced verbatim
-            raise ToolError(str(exc)) from exc
-
-        wrote = False
-        if result.changed and not dry_run:
-            write_locks(lock_path, updated.values())
-            wrote = True
-
-        return {
-            "ok": result.clean,
-            "lockfile": _rel(roots, lock_path),
-            "written": wrote,
-            "dry_run": dry_run,
-            "added": [{"target": e.target, "kind": e.kind, "digest": e.digest} for e in result.added],
-            "rebaselined": [
-                {"target": e.target, "kind": e.kind, "digest": e.digest} for e in result.updated
-            ],
-            "released": [e.target for e in result.removed],
-            "blocked": [
-                {"target": v.target, "file": v.file, "line": v.line, "message": v.message}
-                for v in result.blocked
-            ],
-            "stale": [e.target for e in result.stale],
-            "unchanged": result.unchanged,
-            "hint": (
-                "Locked implementations changed and were left untouched. Re-run with "
-                "force=True only if the user has approved accepting these changes."
-                if result.blocked and not force
-                else ""
-            ),
         }
 
     # ------------------------------------------------------- the review loop
@@ -755,15 +732,17 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         base_ref: Optional[str] = None,
         repo: Optional[str] = None,
         include_waived: bool = False,
-        engine: Optional[Literal["check", "enforce", "lock"]] = None,
+        engine: Optional[Literal["check", "enforce", "lock", "reference"]] = None,
+        rule_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Every issue all three engines report right now, as one keyed list.
+        """Every issue `cdec check` reports right now, as one keyed list.
 
-        This is the triage view: one flat list with a stable `key` per issue, so
-        you can hand specific keys to `cdec_allow`. Already-accepted issues are
-        excluded unless `include_waived=True` (needed to withdraw one). `skipped`
-        names engines or rules that could not run — a skipped engine looks
-        exactly like a clean one otherwise.
+        The triage view: one flat list with a stable `key` per issue, so you can
+        hand specific keys to `cdec_allow`. Filter by `engine` (the key prefix's
+        family) or by `rule_id` (the `rules.yaml` entry). Already-accepted issues
+        are excluded unless `include_waived=True` (needed to withdraw one).
+        `skipped` names rules that could not run — a skipped rule looks exactly
+        like a clean one otherwise.
         """
         _cfg_dir, collected = _collect(
             roots,
@@ -776,13 +755,16 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         issues = [
             i
             for i in collected.issues
-            if (include_waived or not i.waived) and (engine is None or i.engine == engine)
+            if (include_waived or not i.waived)
+            and (engine is None or i.engine == engine)
+            and (rule_id is None or i.rule_id == rule_id)
         ]
         return {
             "ok": not [i for i in issues if not i.waived],
-            "baseline": _rel(roots, collected.baseline_path),
+            "rules_file": _rel(roots, collected.ledger_path),
+            "rules_ran": sorted(collected.rules_ran),
             "engines_ran": sorted(collected.engines_ran),
-            "skipped": [{"engine": e, "reason": r} for e, r in collected.skipped],
+            "skipped": [{"rule_id": r, "reason": why} for r, why in collected.skipped],
             "issues": [_issue_json(i) for i in issues],
             "summary": {
                 "total": len(issues),
@@ -790,7 +772,7 @@ def build_server(project_root: Path | None = None) -> MCPServer:
                 "waived": sum(1 for i in issues if i.waived),
                 "by_engine": {
                     name: sum(1 for i in issues if i.engine == name)
-                    for name in ("check", "enforce", "lock")
+                    for name in ("check", "enforce", "lock", "reference")
                 },
             },
         }
@@ -806,14 +788,16 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         repo: Optional[str] = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Accept issues by key, recording the decision in `.cdec/baseline.yaml`.
+        """Accept issues by key, recording it in the `exceptions:` section of
+        `.cdec/rules.yaml`.
 
-        Ask the user before waiving anything — this switches off a rule they
-        asked for. Always pass a `reason`; it is what makes the ledger
-        reviewable. Keys must name issues the engines report right now, so a
-        stale key is an error rather than a silent no-op.
+        Ask the user before accepting anything — this switches off a rule they
+        asked for. Always pass a `reason`; it is what makes the entry reviewable.
+        Keys must name issues reported right now, so a stale key is an error
+        rather than a silent no-op.
 
-        Lock issues (`L-…`) are refused by design: use `cdec_lock_set(force=True)`.
+        Lock issues (`L-…`) are refused by design: use
+        `cdec_accept(what=["locks"], force=True)`.
         """
         from code_constraints.waivers import allow_keys, save_waivers
 
@@ -827,13 +811,13 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         )
         result = allow_keys(collected.store, collected, keys, reason=reason)
         if result.changed and not dry_run:
-            save_waivers(collected.baseline_path, collected.store)
+            save_waivers(_cfg_dir, collected.store)
 
         payload = _apply_result_json(result)
         payload.update(
             {
                 "ok": not result.failed,
-                "baseline": _rel(roots, collected.baseline_path),
+                "rules_file": _rel(roots, collected.ledger_path),
                 "written": result.changed and not dry_run,
                 "dry_run": dry_run,
             }
@@ -841,11 +825,11 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         return payload
 
     @mcp.tool()
-    def cdec_waivers_list(
+    def cdec_exceptions_list(
         config_dir: Optional[str] = None,
-        engine: Optional[Literal["check", "enforce"]] = None,
+        engine: Optional[Literal["check", "enforce", "reference"]] = None,
     ) -> dict[str, Any]:
-        """Show what is currently accepted in the waiver ledger, and why.
+        """Show what is currently accepted as an exception, and why.
 
         Needs no source parse, so it works even when the code doesn't parse.
         """
@@ -853,16 +837,15 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         from code_constraints.waivers.store import WaiverFileError
 
         cfg_dir = roots.config_dir(config_dir)
-        path = cfg_dir / BASELINE_FILENAME
         try:
-            store = load_waivers(path)
+            store = load_waivers(cfg_dir)
         except WaiverFileError as exc:
             raise ToolError(str(exc)) from exc
 
         waivers = [w for w in store.waivers if engine is None or w.engine == engine]
         return {
-            "baseline": _rel(roots, path),
-            "waivers": [
+            "rules_file": _rel(roots, cfg_dir / RULES_FILENAME),
+            "exceptions": [
                 {
                     "key": w.key,
                     "engine": w.engine,
@@ -881,30 +864,29 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         }
 
     @mcp.tool()
-    def cdec_waiver_remove(
+    def cdec_exception_remove(
         keys: list[str],
         config_dir: Optional[str] = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Withdraw waivers by key so those issues block again.
+        """Withdraw exceptions by key so those issues block again.
 
-        Needs no source parse — the ledger alone identifies what to drop, so a
-        waiver can always be withdrawn even if the code no longer parses.
+        Needs no source parse — the ledger alone identifies what to drop, so an
+        exception can always be withdrawn even if the code no longer parses.
         """
         from code_constraints.waivers import remove_keys, save_waivers
 
         cfg_dir = roots.config_dir(config_dir)
-        path = cfg_dir / BASELINE_FILENAME
-        store = _load_store(path)
+        store = _load_store(cfg_dir)
         result = remove_keys(store, keys)
         if result.changed and not dry_run:
-            save_waivers(path, store)
+            save_waivers(cfg_dir, store)
 
         payload = _apply_result_json(result)
         payload.update(
             {
                 "ok": not (result.malformed or result.not_waived),
-                "baseline": _rel(roots, path),
+                "rules_file": _rel(roots, cfg_dir / RULES_FILENAME),
                 "written": result.changed and not dry_run,
                 "dry_run": dry_run,
             }
@@ -912,7 +894,7 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         return payload
 
     @mcp.tool()
-    def cdec_waivers_prune(
+    def cdec_exceptions_prune(
         config_dir: Optional[str] = None,
         source: Optional[str] = None,
         reference: Optional[str] = None,
@@ -920,11 +902,11 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         repo: Optional[str] = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Drop waivers for issues that no longer occur.
+        """Drop exceptions for issues that no longer occur.
 
-        A stale waiver silently pre-approves a future violation of the same rule
-        on the same element. Only prunes engines that actually ran this time, so
-        a skipped engine never looks like a clean one.
+        A stale exception silently pre-approves a future violation of the same
+        rule on the same element. Only prunes engines whose rules actually ran
+        this time, so a skipped rule never looks like a clean one.
         """
         from code_constraints.waivers import prune as prune_waivers
         from code_constraints.waivers import save_waivers
@@ -939,10 +921,10 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         )
         stale = prune_waivers(collected.store, collected)
         if stale and not dry_run:
-            save_waivers(collected.baseline_path, collected.store)
+            save_waivers(_cfg_dir, collected.store)
         return {
             "ok": True,
-            "baseline": _rel(roots, collected.baseline_path),
+            "rules_file": _rel(roots, collected.ledger_path),
             "written": bool(stale) and not dry_run,
             "dry_run": dry_run,
             "pruned": [
@@ -1006,47 +988,6 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         }
 
     @mcp.tool()
-    def cdec_reference_test(
-        source: Optional[str] = None,
-        lang: Optional[str] = None,
-        reference: Optional[str] = None,
-        config_dir: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Report every structural deviation of the code from the reference model.
-
-        Stricter and more literal than `cdec_check`: added/removed classes,
-        added/removed members, changed signatures, return types, access levels,
-        modifiers, class kind and base classes. This is the CI gate for "the
-        code matches the agreed architecture".
-        """
-        from code_constraints.reference import compare_to_reference, format_human, to_json
-
-        source_path, chosen, ref_path, _cfg = _resolve_inputs(
-            roots, source, lang, reference, config_dir
-        )
-        if not ref_path.is_file():
-            raise ToolError(
-                f"reference model not found: {_rel(roots, ref_path)} — create one with "
-                "`cdec_reference_update` (snapshot the code) or `cdec_reference_set` "
-                "(promote an agreed proposal)."
-            )
-        reference_proj = _load_model(ref_path)
-        current = _parse(source_path, chosen)
-        try:
-            deviations = compare_to_reference(reference_proj, current)
-        except ValueError as exc:
-            raise ToolError(str(exc)) from exc
-
-        return {
-            "ok": not deviations,
-            "source": _rel(roots, source_path),
-            "reference": _rel(roots, ref_path),
-            "deviations": to_json(deviations),
-            "count": len(deviations),
-            "text": format_human(deviations),
-        }
-
-    @mcp.tool()
     def cdec_reference_set(
         model: str,
         reference: Optional[str] = None,
@@ -1055,18 +996,19 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         """Promote an authored model file to be the project's target architecture.
 
         This is the "accept the proposal" step: after the user agrees to a design
-        you proposed with `cdec_propose`, this writes it to the reference model so
-        `cdec_check` and `cdec_reference_test` start constraining development
-        against it. Confirm with the user first — it changes what the whole
-        project is gated on.
+        you proposed with `cdec_propose`, this writes it to the reference model,
+        so `cdec_check` starts constraining development against it. Confirm with
+        the user first — it changes what the whole project is gated on.
+
+        This declares what the code *should become*. To record what it *is*
+        instead, use `cdec_accept(what=["reference"])`.
         """
         model_path = roots.require_file(model, what="model file")
         cfg_dir = roots.config_dir(config_dir)
         ref_path = roots.path(reference)
         if ref_path is None:
             try:
-                cfg = load_project_config(cfg_dir)
-                ref_path = cfg.reference or (cfg_dir / REFERENCE_FILENAME)
+                ref_path = load_project_config(cfg_dir).reference_path
             except ConfigError:
                 ref_path = cfg_dir / REFERENCE_FILENAME
 
@@ -1076,32 +1018,6 @@ def build_server(project_root: Path | None = None) -> MCPServer:
             "ok": True,
             "reference": _rel(roots, ref_path),
             "from": _rel(roots, model_path),
-            "classes": _count_classes(project),
-        }
-
-    @mcp.tool()
-    def cdec_reference_update(
-        source: Optional[str] = None,
-        lang: Optional[str] = None,
-        reference: Optional[str] = None,
-        config_dir: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Re-snapshot the CURRENT code as the reference architecture.
-
-        This accepts the code as-is and erases the drift the reference was there
-        to detect, so confirm with the user before calling it. To adopt a
-        *designed* architecture instead, use `cdec_reference_set`.
-        """
-        source_path, chosen, ref_path, _cfg = _resolve_inputs(
-            roots, source, lang, reference, config_dir
-        )
-        project = _parse(source_path, chosen)
-        _save_model(project, ref_path)
-        return {
-            "ok": True,
-            "reference": _rel(roots, ref_path),
-            "source": _rel(roots, source_path),
-            "language": chosen,
             "classes": _count_classes(project),
         }
 
@@ -1207,12 +1123,12 @@ def _package_version() -> str:
         return "0+unknown"
 
 
-def _load_store(path: Path) -> "WaiverStore":
+def _load_store(config_dir: Path) -> Any:
     from code_constraints.waivers import load_waivers
     from code_constraints.waivers.store import WaiverFileError
 
     try:
-        return load_waivers(path)
+        return load_waivers(config_dir)
     except WaiverFileError as exc:
         raise ToolError(str(exc)) from exc
 

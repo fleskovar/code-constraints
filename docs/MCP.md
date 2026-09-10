@@ -1,14 +1,14 @@
 # code-constraints as an MCP server
 
-`cdec-mcp` exposes the three enforcement engines, the model pipeline, and the
-waiver review loop over the [Model Context Protocol](https://modelcontextprotocol.io)
-as a **stdio server**, so any MCP-capable coding harness can run code-constraints
-as tools instead of shelling out to the CLI and parsing human output.
+`cdec-mcp` exposes the gate, the model pipeline, and the exception review loop
+over the [Model Context Protocol](https://modelcontextprotocol.io) as a **stdio
+server**, so any MCP-capable coding harness can run code-constraints as tools
+instead of shelling out to the CLI and parsing human output.
 
 The tools call the library in-process, so results come back as structured JSON
-and issue keys (`V-`/`F-`/`L-`) are derived by the same code path the CLI uses —
-a key an agent reads from `cdec_check` is the same key `cdec baseline allow`
-accepts on the command line.
+and issue keys (`V-`/`F-`/`L-`/`R-`) are derived by the same code path the CLI
+uses — a key an agent reads from `cdec_check` is the same key
+`cdec exceptions allow` accepts on the command line.
 
 ## Install
 
@@ -125,28 +125,30 @@ stdout (stdout is the protocol stream).
 
 | Tool | What it does |
 | --- | --- |
-| `cdec_status` | How code-constraints is configured here: language, source, reference, rule count, waiver/lock ledgers. Start here. |
-| `cdec_rules` | The catalogue of architectural rule tags (`@no_instantiation`, `[Sealed]`, …), their legal targets and parameters. |
+| `cdec_status` | How code-constraints is configured here: language, source, reference, which rules are active, how many exceptions and locks are recorded. Start here. |
+| `cdec_rules` | The catalogue of constraint *tags* (`@no_instantiation`, `[Sealed]`, …), their legal targets and parameters. Read it before writing a tag. |
+| `cdec_rule_types` | The `type:` values that can appear in `.cdec/rules.yaml`. Read it before writing a rule. |
 
-### The three engines
+### The gate
 
-| Tool | Engine | Question it answers |
-| --- | --- | --- |
-| `cdec_check` | A — drift | Did the architecture drift from the reference model? Model only; never reads bodies. `enforce=True` also runs B; `locks=True` (default) also runs C. |
-| `cdec_enforce` | B — conformance | Does the code obey its rule tags right now? Re-parses source and inspects method bodies. |
-| `cdec_lock_check` | C — freeze | Did a frozen (`@locked`) implementation change at all? |
-| `cdec_lock_list` | C | What is lockable, what is tagged, what is baselined, what is stale. |
-| `cdec_lock_set` | C | Record current implementations as the approved baseline. |
+| Tool | What it does |
+| --- | --- |
+| `cdec_check` | Runs **every** rule in `.cdec/rules.yaml` and returns one verdict. Model rules, `tag-conformance`, `implementation-locks` and `reference-architecture` alike. There is no second gate to call. |
+| `cdec_accept` | Records the current state as approved instead of failing on it: `what=["rules"]` grandfathers today's violations, `["locks"]` records new lock digests, `["reference"]` re-snapshots the reference model. |
+| `cdec_locks` | Read-only: what is lockable, what is tagged, what is baselined, what is stale. |
+
+Each violation carries a key whose prefix names the engine that produced it — `V-` a model
+rule, `F-` `tag-conformance`, `L-` `implementation-locks`, `R-` `reference-architecture`.
 
 ### The review loop
 
 | Tool | What it does |
 | --- | --- |
-| `cdec_issues` | Every issue all three engines report, as one keyed list. The triage view. |
-| `cdec_allow` | Accept issues by key into `.cdec/baseline.yaml`, with a reason. |
-| `cdec_waivers_list` | What is currently accepted, and why. Needs no source parse. |
-| `cdec_waiver_remove` | Withdraw waivers by key so those issues block again. |
-| `cdec_waivers_prune` | Drop waivers for issues that no longer occur. |
+| `cdec_issues` | Every issue `cdec_check` reports, as one keyed list. The triage view; filter by `engine` or `rule_id`. |
+| `cdec_allow` | Accept issues by key into the `exceptions:` section of `.cdec/rules.yaml`, with a reason. |
+| `cdec_exceptions_list` | What is currently accepted, and why. Needs no source parse. |
+| `cdec_exception_remove` | Withdraw exceptions by key so those issues block again. |
+| `cdec_exceptions_prune` | Drop exceptions for issues that no longer occur. |
 
 ### The model pipeline
 
@@ -155,36 +157,41 @@ stdout (stdout is the protocol stream).
 | `cdec_parse` | Parse a source tree into a model file (`.xmi` or `.json`). |
 | `cdec_convert` | Convert a model between XMI 2.1 and editor JSON. |
 | `cdec_propose` | Push a proposed architecture to the web viewer, diffed against the code. Starts the viewer if needed. |
-| `cdec_reference_test` | Every structural deviation of the code from the reference model. |
-| `cdec_reference_set` | Promote an authored model to be the target architecture. |
-| `cdec_reference_update` | Re-snapshot the *current* code as the reference. |
+| `cdec_reference_set` | Promote an authored model to be the target architecture — what the code *should become*. |
 
 ## Operations that need the user's say-so
 
-Four tools change what the project is gated on, or accept something a rule
+Three tools change what the project is gated on, or accept something a rule
 rejected. An agent should confirm with the user before calling them:
 
 - **`cdec_allow`** — switches off a rule for a specific element. Always pass a
-  `reason`; that is what makes the ledger reviewable.
-- **`cdec_lock_set(force=True)`** — accepts a change to a *frozen*
-  implementation. Without `force` the tool only adds new locks and can never
-  erase evidence that locked code changed.
+  `reason`; that is what makes the entry reviewable.
+- **`cdec_accept`** — accepts the current state wholesale. Each value is a different
+  size of decision:
+  - `what=["rules"]` grandfathers every current violation. The adoption move on an
+    existing codebase, and a blunt one anywhere else.
+  - `what=["locks"]` records digests for newly tagged code. Safe on its own — without
+    `force` it only *adds* and can never erase evidence that locked code changed.
+    `force=True` accepts a change to a *frozen* implementation: only with explicit
+    approval.
+  - `what=["reference"]` re-snapshots the current code, erasing the drift the reference
+    existed to detect.
 - **`cdec_reference_set`** — replaces the target architecture.
-- **`cdec_reference_update`** — re-snapshots the current code as the reference,
-  erasing the drift the reference existed to detect.
 
-Lock violations are deliberately **not waivable** through `cdec_allow`; the tool
-refuses them and points at `cdec_lock_set(force=True)`, which leaves a reviewable
-diff on `.cdec/locks.yaml` that CODEOWNERS can gate.
+Lock violations are deliberately **not acceptable** through `cdec_allow`; the tool refuses
+them and points at `cdec_accept(what=["locks"], force=True)`, which leaves a reviewable diff
+on the `locks:` section of `.cdec/rules.yaml` that CODEOWNERS can gate.
+`cdec_accept(what=["rules"])` refuses them too, and reports which ones it would not
+grandfather.
 
 Most tools that write accept `dry_run=True` to preview the change first.
 
 ## Typical flows
 
-**Gate a change.** One call runs all three engines:
+**Gate a change.** One call runs every rule the project configured:
 
 ```json
-{"tool": "cdec_check", "arguments": {"enforce": true}}
+{"tool": "cdec_check", "arguments": {}}
 ```
 
 `ok` is the verdict; `text` is the human report with keys inline.
@@ -218,7 +225,7 @@ same environment the `command` points at.
 resolvable from the harness's environment. Use the absolute-interpreter variant
 above.
 
-**Tools report "missing .cdec/config.yaml"** — the project isn't scaffolded, or
+**Tools report "missing .cdec/rules.yaml"** — the project isn't scaffolded, or
 the server's project root isn't the repo. Check `cdec_status`'s `project_root`,
 and run `cdec init` in the target project.
 

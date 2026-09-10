@@ -4,7 +4,7 @@
 
 An element tagged `@locked` that has **no ledger entry** is reported `missing`. Nothing is actually being verified, so a silent pass would be the worst possible outcome: the code would look protected and be wide open.
 
-**Engine:** C — freeze — `cdec lock check`  
+**Engine:** C — freeze — the `implementation-locks` rule  
 **Constraint:** [`locked`](../../../../../../docs/RULES_CATALOGUE.md#locked)  
 **Language:** Python  
 **Runner:** `tests/case_runner.py::_run_lock`
@@ -47,7 +47,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec lock` answers a narrower question than the other engines: not "did intent drift" or "does the code obey the tag", but **did this body change at all**.
+1. The `implementation-locks` rule answers a narrower question than the other rules: not "did intent drift" or "does the code obey the tag", but **did this body change at all**.
 2. A lock is an **AST identity, not a line range**. The digest is taken over a normalised syntax tree, so position is irrelevant.
 3. Comments are dropped, and docstrings too unless `lock.include_docstrings` is set.
 4. The `@locked` tag itself is stripped **recursively** before digesting — including a method-level lock nested inside a locked class. Applying or removing a lock can therefore never change the digest it records.
@@ -57,7 +57,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 ### Applying them
 
 **Step 0 — the ledger is empty.** This case has **no `inputs/baseline/`**, which is how
-it stages the situation: someone added a `@locked` tag and never ran `cdec lock set`.
+it stages the situation: someone added a `@locked` tag and never ran `cdec check --automatic-exceptions locks`.
 
 **Step 1 — collect declared targets (clause 1).** One: `orders.Receipt.formatted`, with
 `declared=True` because it carries the tag.
@@ -70,14 +70,14 @@ it stages the situation: someone added a `@locked` tag and never ran `cdec lock 
 
 **Step 3 — why this is a violation rather than a warning.** The failure mode it prevents
 is a reviewer seeing `@locked` in a diff, assuming the body is frozen, and approving. The
-fix is one safe command — `cdec lock set` — which anyone may run, because adding a lock
+fix is one safe command — `cdec check --automatic-exceptions locks` — which anyone may run, because adding a lock
 can never erase evidence of anything.
 
 ## Why this proves the code is correct
 
 - **It pins:** that a tag with no ledger entry fails rather than passing silently.
 - **It would catch:** a regression that only iterated the ledger (and so never noticed a tag nobody had baselined) — the most plausible way this check gets lost during a refactor.
-- **It does not cover:** the `cdec lock set` write path itself; see `tests/test_lock_cli.py`.
+- **It does not cover:** the ledger write path itself; see `tests/test_lock_cli.py`.
 
 ## How to run and debug
 

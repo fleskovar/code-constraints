@@ -3,13 +3,14 @@
 Rules that only ever say "no" get switched off. The point of this package is the
 other half of the loop: a violation is reported with a stable key, a human or an
 agent decides it is acceptable, and that decision is recorded in
-`.cdec/baseline.yaml` with a reason — reviewable in the diff, and revocable.
+the `exceptions:` section of `.cdec/rules.yaml` with a reason — sitting next to
+the rule it exempts, reviewable in the diff, and revocable.
 
-    cdec check                          # every issue prints its key
-    cdec baseline review --out r.txt    # one line per issue, ready to mark
+    cdec check                            # every issue prints its key
+    cdec exceptions review --out r.txt    # one line per issue, ready to mark
     …mark lines [ALLOW]…
-    cdec baseline patch --file r.txt    # apply exactly those decisions
-    cdec baseline allow V-1A2B3C4D      # or name one directly
+    cdec exceptions patch --file r.txt    # apply exactly those decisions
+    cdec exceptions allow V-1A2B3C4D      # or name one directly
 
 Locks (Engine C) are pointedly excluded — see `model.NotWaivable`.
 """
@@ -39,11 +40,14 @@ from code_constraints.waivers.review import (
     render_review,
 )
 from code_constraints.waivers.store import (
+    BASELINE_FILENAME,
+    EXCEPTIONS_SECTION,
     WAIVABLE_ENGINES,
     Waiver,
     WaiverFileError,
     WaiverStore,
     default_actor,
+    ledger_paths,
     load_waivers,
     now_stamp,
     save_waivers,
@@ -51,6 +55,8 @@ from code_constraints.waivers.store import (
 
 __all__ = [
     "ApplyResult",
+    "BASELINE_FILENAME",
+    "EXCEPTIONS_SECTION",
     "CollectOptions",
     "Collected",
     "Decision",
@@ -69,6 +75,7 @@ __all__ = [
     "engine_of",
     "find_keys",
     "is_key",
+    "ledger_paths",
     "load_waivers",
     "make_key",
     "normalize_key",

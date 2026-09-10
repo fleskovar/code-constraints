@@ -5,7 +5,7 @@
 > minimal MVC template built around `[Layer]` and the `layer-dependencies` rule. Every
 > command below is copy-pasteable from the repository root.
 
-C# has the **most precise** Engine B of any supported language: construction detection keys
+C# has the **most precise** `tag-conformance` of any supported language: construction detection keys
 off grammar node kinds rather than guessing from names, so there are essentially no false
 positives to suppress.
 
@@ -92,7 +92,7 @@ architectural one. If a badge isn't showing up, check the `using` first.
 
 ---
 
-## 4. Engine A — architectural drift (`cdec check`)
+## 4. the model rules — architectural drift (`cdec check`)
 
 ```bash
 cdec check --config examples/csharp_demo/.cdec --source examples/csharp_demo
@@ -105,14 +105,14 @@ cdec check --config examples/csharp_demo/.cdec --source examples/csharp_demo
 
 ---
 
-## 5. Engine B — implementation conformance (`cdec enforce`)
+## 5. `tag-conformance` — implementation conformance (the `tag-conformance` rule)
 
 ```bash
-cdec enforce examples/csharp_demo --lang csharp
+cdec check --config examples/csharp_demo/.cdec --source examples/csharp_demo
 ```
 
 ```
-cdec enforce: 3 conformance violation(s):
+[tags-must-be-honoured] (error) — 3 finding(s):
   - [F-4BFE2AF0] [factory] Orders/Billing.cs:97: 'Orders.CheckoutService.QuickReceipt'
       constructs 'Receipt' outside its designated factory (ReceiptFactory).
   - [F-B8976F60] [no-instantiation] Orders/Billing.cs:97: 'Orders.CheckoutService.QuickReceipt'
@@ -132,10 +132,10 @@ the constructor.
 
 ---
 
-## 6. Engine C — implementation freeze (`cdec lock`)
+## 6. `implementation-locks` — implementation freeze (the `implementation-locks` rule)
 
 ```bash
-cdec lock list examples/csharp_demo --lang csharp --config examples/csharp_demo/.cdec
+cdec locks examples/csharp_demo --lang csharp --config examples/csharp_demo/.cdec
 # ok   Orders.Receipt.Formatted  method  (tag)  Orders/Billing.cs:50
 ```
 
@@ -193,8 +193,7 @@ diagrams render on the interactive SvelteFlow canvas.
 ## 9. CI
 
 ```yaml
-- run: cdec check   --config .cdec --source .   # Engine A + C
-- run: cdec enforce . --lang csharp             # Engine B
+- run: cdec check   --config .cdec --source .   # the model rules + C
 ```
 
 See [Tutorial Part 9](../TUTORIAL.md#part-9--wiring-up-cicd) for full workflows.

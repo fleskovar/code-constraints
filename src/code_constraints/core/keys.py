@@ -20,12 +20,15 @@ class* of issues, not a physical line. Two identical violations of one rule on
 one element share a key, and waiving it waives both. That is the intended
 semantic — the reviewer is accepting a fact about the code, not a coordinate.
 
-The prefix letter records which engine produced the issue, so a key alone is
-enough to route it:
+The prefix letter records which *engine* produced the issue, so a key alone is
+enough to route it. Every engine now runs under the single `cdec check` command,
+but the prefixes are unchanged — they name the engine, not the command, which is
+what keeps a waiver written before the CLI was unified still valid after it:
 
-    V-  `cdec check`    (Engine A — architectural drift)
-    F-  `cdec enforce`  (Engine B — implementation conformance)
-    L-  `cdec lock`     (Engine C — implementation freeze)
+    V-  configured architectural rules  (Engine A — drift)
+    F-  source-tag conformance          (Engine B — implementation obeys its tags)
+    L-  implementation locks            (Engine C — frozen body changed)
+    R-  reference-architecture gate     (structural deviation from reference.xmi)
 """
 
 from __future__ import annotations
@@ -33,11 +36,13 @@ from __future__ import annotations
 import hashlib
 import re
 
-# Engine name -> key prefix letter. Engine names match the CLI commands.
+# Engine name -> key prefix letter. Engine names are internal identities that
+# outlive CLI command names, so a recorded waiver survives a CLI reshuffle.
 ENGINE_PREFIX: dict[str, str] = {
     "check": "V",
     "enforce": "F",
     "lock": "L",
+    "reference": "R",
 }
 PREFIX_ENGINE: dict[str, str] = {v: k for k, v in ENGINE_PREFIX.items()}
 
@@ -46,7 +51,7 @@ PREFIX_ENGINE: dict[str, str] = {v: k for k, v in ENGINE_PREFIX.items()}
 # same engine into one waiver — annoying, never unsound.
 _KEY_HEX_LEN = 8
 
-KEY_RE = re.compile(r"\b([VFL])-([0-9A-F]{%d})\b" % _KEY_HEX_LEN)
+KEY_RE = re.compile(r"\b([VFLR])-([0-9A-F]{%d})\b" % _KEY_HEX_LEN)
 
 
 class UnknownEngine(ValueError):

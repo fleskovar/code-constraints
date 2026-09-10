@@ -18,6 +18,8 @@ class FrozenMembers(Rule):
       kinds:    optional list, subset of ["attribute", "operation"] (default: both)
     """
 
+    default_scope = "diff"
+
     def check(self, ctx: RuleContext) -> Iterable[Violation]:
         if not ctx.has_diff:
             return

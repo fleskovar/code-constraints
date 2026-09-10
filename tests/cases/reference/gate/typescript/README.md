@@ -2,9 +2,9 @@
 
 ## What this proves
 
-TypeScript has **no constraint tags and no `cdec lock` support**, which makes the reference gate the strongest guarantee available to it — and it is a strong one, because it needs no annotation whatsoever. This case is the answer to "what can code-constraints do for my TypeScript project?".
+TypeScript has **no constraint tags and no implementation-lock support**, which makes the reference gate the strongest guarantee available to it — and it is a strong one, because it needs no annotation whatsoever. This case is the answer to "what can code-constraints do for my TypeScript project?".
 
-**Engine:** D — reference gate — `cdec reference test`  
+**Engine:** D — reference gate — the `reference-architecture` rule  
 **Constraint:** [`Reference deviations`](../../../../../docs/RULES_CATALOGUE.md#3--the-reference-gate)  
 **Language:** TypeScript  
 **Runner:** `tests/case_runner.py::_run_reference`
@@ -71,7 +71,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec reference test` is a **wall**, not a scalpel: any structural deviation from the committed `.cdec/reference.xmi` fails, with no per-rule configuration at all.
+1. The `reference-architecture` rule is a **wall**, not a scalpel: any structural deviation from the committed `.cdec/reference.xmi` fails, with no per-rule configuration at all.
 2. It runs a **dedicated field-by-field comparator** (`reference/compare.py`), not the diff engine — which is why it catches things `frozen-members` structurally cannot.
 3. Classes are matched by **qualified name**; attributes by **name within the class**; operations by **name within the class**, with a full-signature fallback for overload groups.
 4. **Because operations match by name, a changed parameter list reads as one `operation-signature-changed`** — not as the removed + added pair `frozen-members` produces. The messages are meant to read as "changed", and this is the price and the point.
@@ -101,7 +101,7 @@ reference set MODEL` is the other direction: "declare what the code *should beco
 
 ### TypeScript-specific notes
 
-Together with the `rules.yaml` rules, this is the whole TypeScript story: parse → model → dependency and shape rules → reference gate. `cdec enforce` and `cdec lock` refuse TypeScript **by name** rather than reporting "nothing found", so an unsupported language and an untagged one are never confused.
+Together with the `rules.yaml` rules, this is the whole TypeScript story: parse → model → dependency and shape rules → reference gate. The `tag-conformance` and `implementation-locks` rules refuse TypeScript **by name** rather than reporting "nothing found", so an unsupported language and an untagged one are never confused.
 
 ## Why this proves the code is correct
 

@@ -101,7 +101,7 @@ not ignored.
 
 ### TypeScript-specific notes
 
-TypeScript carries no constraint tags, so `cdec enforce` has nothing to check here and `cdec lock` refuses by name. Every `rules.yaml` rule still applies, because they all run over the shared `Project` model.
+TypeScript carries no constraint tags, so `tag-conformance` has nothing to check here and `implementation-locks` refuses by name. Every `rules.yaml` rule still applies, because they all run over the shared `Project` model.
 
 ## Why this proves the code is correct
 

@@ -20,8 +20,8 @@ failing code look like.
 | [1.2](#12-dependency--layering) | Dependency & layering — `forbidden-references`, `forbidden-package-references`, `no-cyclic-package-dependencies`, `layer-dependencies` | |
 | [1.3](#13-shape--complexity) | Shape & complexity — `dangling-classes`, `subclass-naming`, `max-class-fanout` | |
 | [2](#2--source-level-constraint-tags) | **Constraint tags** — decorators/attributes written in the code | source |
-| [3](#3--the-reference-gate) | **The reference gate** — freeze the whole public shape, zero config | `.cdec/reference.xmi` |
-| [4](#4--implementation-locks) | **Implementation locks** — freeze a body byte-for-meaning | `.cdec/locks.yaml` |
+| [3](#3--the-reference-gate) | **The reference gate** — `reference-architecture`: freeze the whole public shape | `.cdec/rules.yaml` + `reference.xmi` |
+| [4](#4--implementation-locks) | **Implementation locks** — `implementation-locks`: freeze a body byte-for-meaning | `.cdec/rules.yaml` |
 | [5](#5--escape-hatches--suppression) | Escape hatches & suppression | |
 | [6](#6--choosing-the-right-mechanism) | Choosing the right mechanism | |
 
@@ -32,15 +32,19 @@ failing code look like.
 Constraints are enforced by four **decoupled** engines. They share the tag *catalogue* and
 nothing else — knowing which engine owns a constraint tells you what it can and cannot see.
 
-| Engine | Command | Question it answers | Reads method bodies? | Needs a baseline? |
-|---|---|---|---|---|
-| **A — drift** | `cdec check` | "Did the architecture drift from the agreed baseline?" | No (model only) | For `scope: diff` rules |
-| **B — conformance** | `cdec enforce` | "Does the code actually obey its tags right now?" | Yes | No |
-| **C — freeze** | `cdec lock check` | "Did this specific implementation change at all?" | Yes (digests them) | The lock ledger |
-| **D — reference gate** | `cdec reference test` | "Did *anything* about the public shape change?" | No (model only) | `reference.xmi` |
+Every one of them is reached the same way: a `type:` in `.cdec/rules.yaml`, run by
+`cdec check`. The engines stay separate underneath; the rule types are thin adapters over
+them, so one command gives one report without coupling four different analyses.
 
-`cdec check --enforce` runs A and B in one invocation, and A runs C automatically whenever
-the project has locks.
+| Engine | `type:` | Question it answers | Reads method bodies? | Needs a baseline? | Key |
+|---|---|---|---|---|---|
+| **A — drift & shape** | the eleven model rules | "Did the architecture drift, and does it obey the laws we wrote down?" | No (model only) | For `scope: diff` rules | `V-` |
+| **B — conformance** | `tag-conformance` | "Does the code actually obey its tags right now?" | Yes | No | `F-` |
+| **C — freeze** | `implementation-locks` | "Did this specific implementation change at all?" | Yes (digests them) | The `locks:` ledger | `L-` |
+| **D — reference gate** | `reference-architecture` | "Did *anything* about the public shape change?" | No (model only) | `reference.xmi` | `R-` |
+
+The key prefix names the engine, not the command, so an exception recorded before the CLI
+was unified still resolves.
 
 ---
 
@@ -66,8 +70,10 @@ the project has locks.
 | `@no_instantiation` / `[NoInstantiation]` | tag | B (body) | [2.5](#no-instantiation) |
 | `@no_side_effects` / `[NoSideEffects]` | tag | drift only | [2.6](#no-side-effects) |
 | `@locked` / `[Locked]` | tag | C | [2.7](#locked) |
-| Reference deviations | snapshot compare | D | [3](#3--the-reference-gate) |
-| `lock.targets` globs | config.yaml | C | [4](#4--implementation-locks) |
+| `tag-conformance` | rules.yaml | B | [2](#2--source-level-constraint-tags) |
+| `reference-architecture` | rules.yaml | D | [3](#3--the-reference-gate) |
+| `implementation-locks` | rules.yaml | C | [4](#4--implementation-locks) |
+| `targets:` globs | rules.yaml | C | [4](#4--implementation-locks) |
 
 ---
 
@@ -78,7 +84,7 @@ Every constraint below is pinned by at least one **human-readable case folder** 
 and a `README.md` whose walkthrough derives the second from the first by hand. Each ✓ links
 to that walkthrough — the fastest way to see exactly what a rule does to real code and why.
 
-The matrix is **capability-targeted**, not a full cross-product. Engine A's eleven rules run
+The matrix is **capability-targeted**, not a full cross-product. The eleven model rules run
 on the language-agnostic `Project` model, so their logic is proven once (Python + C#) and the
 five other parsers are covered on the rules that actually stress their reference graph —
 `forbidden-package-references`, `dangling-classes`, `subclass-naming`, and (for the tag
@@ -118,10 +124,11 @@ Run them with `make test-cases`, one with
 | [`locked`](#locked) | C | [✓](../tests/cases/lock/locked/python/changed/README.md) [✓](../tests/cases/lock/locked/python/glob/README.md) [✓](../tests/cases/lock/locked/python/missing/README.md) [✓](../tests/cases/lock/locked/python/reformat/README.md) [✓](../tests/cases/lock/locked/python/removed/README.md) [✓](../tests/cases/lock/locked/python/unlocked/README.md) | [✓](../tests/cases/lock/locked/csharp/changed/README.md) [✓](../tests/cases/lock/locked/csharp/reformat/README.md) [✓](../tests/cases/lock/locked/csharp/unlocked/README.md) | [✓](../tests/cases/lock/locked/odin/changed/README.md) [✓](../tests/cases/lock/locked/odin/reformat/README.md) | [✓](../tests/cases/lock/locked/lua/changed/README.md) [✓](../tests/cases/lock/locked/lua/reformat/README.md) | [✓](../tests/cases/lock/locked/julia/changed/README.md) [✓](../tests/cases/lock/locked/julia/reformat/README.md) | — | — |
 | [`reference-gate`](#3--the-reference-gate) | D | [✓](../tests/cases/reference/gate/python/README.md) | [✓](../tests/cases/reference/gate/csharp/README.md) | [✓](../tests/cases/reference/gate/odin/README.md) | [✓](../tests/cases/reference/gate/lua/README.md) | [✓](../tests/cases/reference/gate/julia/README.md) | [✓](../tests/cases/reference/gate/typescript/README.md) | [✓](../tests/cases/reference/gate/svelte/README.md) |
 
-> **Legend.** Engine A = `cdec check`, B = `cdec enforce`, C = `cdec lock check`,
-> D = `cdec reference test`. The `locked` row carries several cases per language because the
-> five lock *violation kinds* (`changed`, `missing`, `removed`, `unlocked`, `algo-mismatch`)
-> and the "reformatting is invisible" guarantee each need their own proof.
+> **Legend.** Engine A = the model rules, B = `tag-conformance`, C = `implementation-locks`,
+> D = `reference-architecture`. All four run in `cdec check`. The `locked` row carries
+> several cases per language because the five lock *violation kinds* (`changed`, `missing`,
+> `removed`, `unlocked`, `algo-mismatch`) and the "reformatting is invisible" guarantee each
+> need their own proof.
 
 ---
 
@@ -134,7 +141,7 @@ is passed through as a rule-specific option.
 
 ```yaml
 rules:
-  - id: catalog-is-a-leaf-package          # unique, stable — the key in baseline.yaml
+  - id: catalog-is-a-leaf-package          # unique, stable — groups the report
     type: forbidden-package-references     # which rule implementation to run
     severity: error                        # error | warning | off
     scope: snapshot                        # diff | snapshot (each type has a default)
@@ -148,7 +155,7 @@ rules:
 
 | Field | Meaning |
 |---|---|
-| `id` | Unique and stable. Violations are recorded in `baseline.yaml` under this id, so renaming an id discards its grandfathered suppressions. |
+| `id` | Unique and stable. Violations are recorded in the `exceptions:` list under this id, so renaming an id discards its grandfathered suppressions. |
 | `type` | The rule implementation. An unknown `type` is a hard config error listing the known ones. |
 | `severity` | `error` fails the run at the default `--fail-on error`; `warning` reports without failing; `off` skips the entry entirely (it is never loaded). |
 | `scope` | `diff` rules compare against a baseline and are **skipped with a note** — never silently passed — when no baseline is resolvable. `snapshot` rules evaluate the current model alone. |
@@ -261,7 +268,7 @@ change.
     message: |
       Class '{qualified_name}' was removed — a breaking change for anything
       importing it. Deprecate it for one release instead, or, if the removal
-      is agreed, run `cdec check --update-reference` in this PR.
+      is agreed, run `cdec check --automatic-exceptions reference` in this PR.
 ```
 
 **✅ Passes** — the class stays, its internals change freely:
@@ -284,7 +291,7 @@ class TwilioNotifier(Notification):
 [no-removed-classes] (error)
   - notifications.SmsNotifier: Class 'notifications.SmsNotifier' was removed — a breaking change for
       anything importing it. Deprecate it for one release instead, or, if the
-      removal is agreed, run `cdec check --update-reference` in this PR.
+      removal is agreed, run `cdec check --automatic-exceptions reference` in this PR.
 
 Summary: 1 error(s), 0 warning(s).
 ```
@@ -337,7 +344,7 @@ single "changed" — the old signature disappeared and a new one arrived.
       The {kind} '{member}' on '{qualified_name}' was {action}.
       Notification is a public contract — every concrete notifier must keep
       its signature stable. If downstream implementations were updated in
-      lockstep, run `cdec check --update-reference` to accept the new baseline.
+      lockstep, run `cdec check --automatic-exceptions reference` to accept the new baseline.
 ```
 
 **✅ Passes** — a private helper attribute is added; `kinds: [operation]` does not match it,
@@ -410,7 +417,7 @@ annotation alone does not carry.
       was {action}. These tags encode deliberate design constraints
       (factory-only construction, immutability, sealing). Re-add the tag —
       or, if the constraint is genuinely being retired, run
-      `cdec check --update-reference` so the decision is reviewable.
+      `cdec check --automatic-exceptions reference` so the decision is reviewable.
 ```
 
 **✅ Passes** — the tags stay, the implementation changes:
@@ -886,7 +893,7 @@ Summary: 1 error(s), 0 warning(s).
 
 High fanout marks a hub: the class every change ripples through, the one nobody dares
 refactor. As a `warning` it is an excellent early-warning metric; as an `error` on a mature
-codebase it usually needs a `baseline.yaml` first.
+codebase it usually needs a the `exceptions:` list first.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
@@ -948,7 +955,8 @@ Summary: 0 error(s), 1 warning(s).
 Tags are **Python decorators**, **C# attributes**, **Julia macros**, or **`@cdec` annotation
 comments** (Lua and Odin) that carry a design constraint on the declaration itself. They are
 captured on the model, round-trip through XMI, render as badges in the web viewer,
-participate in the diff, and are enforced by Engine B or C.
+participate in the diff, and are enforced by the `tag-conformance` and
+`implementation-locks` rules.
 
 ### Installing the shims
 
@@ -1028,11 +1036,11 @@ spelling, so the vocabulary can never drift between languages:
 where Odin and Julia use brackets (`["A"]`); both are read correctly.
 
 Tags are available in **Python, C#, Odin, Lua and Julia**. TypeScript and Svelte parse into
-the model and support every `rules.yaml` rule, but have no tags, so `cdec enforce` has
-nothing to check there and `cdec lock` refuses by name.
+the model and support every `rules.yaml` rule, but have no tags, so the `tag-conformance` rule has
+nothing to check there and the `implementation-locks` rule refuses by name.
 
 > **Per-language detail** — how each language recovers classes from code that may not have
-> them, what its Engine B can and cannot see, and its parser gotchas — lives in the
+> them, what `tag-conformance` can and cannot see there, and its parser gotchas — lives in the
 > **[per-language guides](languages/README.md)**.
 
 Freeze the *presence* of these tags over time with [`frozen-rules`](#frozen-rules) —
@@ -1140,7 +1148,7 @@ class DiscountedReceipt(Receipt):       # sealed types may not be subclassed
 ```
 
 ```
-cdec enforce: 1 conformance violation(s):
+[tags-must-be-honoured] (error) — 1 finding(s):
   - [sealed] orders/billing.py:61: 'orders.DiscountedReceipt' subclasses sealed
     class 'Receipt'; sealed types may not be subclassed.
 ```
@@ -1205,7 +1213,7 @@ class Receipt:
 ```
 
 ```
-cdec enforce: 1 conformance violation(s):
+[tags-must-be-honoured] (error) — 1 finding(s):
   - [immutable] orders/billing.py:38: 'orders.Receipt' is @immutable but
     'apply_discount' reassigns field 'self.total' outside __init__.
 ```
@@ -1263,7 +1271,7 @@ class CheckoutService:
 ```
 
 ```
-cdec enforce: 1 conformance violation(s):
+[tags-must-be-honoured] (error) — 1 finding(s):
   - [factory] orders/billing.py:97: 'orders.CheckoutService.quick_receipt'
     constructs 'Receipt' outside its designated factory (ReceiptFactory).
 ```
@@ -1325,7 +1333,7 @@ class CheckoutService:
 ```
 
 ```
-cdec enforce: 1 conformance violation(s):
+[tags-must-be-honoured] (error) — 1 finding(s):
   - [no-instantiation] orders/billing.py:97: 'orders.CheckoutService.quick_receipt'
     is tagged @no_instantiation but constructs 'Receipt'.
 ```
@@ -1394,7 +1402,7 @@ Summary: 1 error(s), 0 warning(s).
 ### `locked`
 
 **Declares** that an implementation is frozen. The element's normalised AST is digested into
-`.cdec/locks.yaml` by `cdec lock set`, and `cdec lock check` fails on any later semantic
+the `locks:` section of `.cdec/rules.yaml` by `cdec check --automatic-exceptions locks`, and `cdec check` fails on any later semantic
 change — see [§4](#4--implementation-locks) for the ledger, violation kinds, and the
 privilege boundary.
 
@@ -1454,10 +1462,10 @@ cdec lock: 1 lock violation(s):
       'orders.Receipt.formatted' is a frozen method and its implementation changed.
       Lock reason: receipt wording is contractual; finance signed off on it
       Locked by: Fran on 2026-08-02T21:00:38+00:00
-      Revert the change, or ask a lead to approve a re-baseline with `cdec lock set --target orders.Receipt.formatted --force`.
+      Revert the change, or ask a lead to approve a re-baseline with `cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force`.
 
 A locked implementation may only change with a lead's approval:
-  cdec lock set --target <name> --force --reason "<why>"
+  cdec check --automatic-exceptions locks --force
 To ship without re-baselining (audited, discouraged):
   cdec check --bypass-locks --bypass-reason "<why>"
 ```
@@ -1466,12 +1474,12 @@ To ship without re-baselining (audited, discouraged):
 
 # 3 · The reference gate
 
-`cdec check` is a scalpel — it enforces exactly the rules you listed. `cdec reference test`
+`cdec check` is a scalpel — it enforces exactly the rules you listed. `cdec check`
 is a wall: **any** structural deviation from the committed `.cdec/reference.xmi` fails, with
 no per-rule configuration at all.
 
 ```bash
-cdec reference test examples/python_demo --lang python \
+cdec check examples/python_demo --lang python \
      --reference examples/python_demo/.cdec/reference.xmi
 ```
 
@@ -1517,7 +1525,7 @@ public class Author
 ```
 
 ```
-cdec reference test: 3 deviation(s) from the reference:
+cdec check: 3 deviation(s) from the reference:
 
   catalog.Author
     - [operation-modifier-changed] Method 'Books' on 'catalog.Author' modifiers changed: access level public -> private.
@@ -1530,7 +1538,7 @@ cdec reference test: 3 deviation(s) from the reference:
 A plain added attribute reads the same way:
 
 ```
-cdec reference test: 1 deviation(s) from the reference:
+cdec check: 1 deviation(s) from the reference:
 
   catalog.Author
     - [attribute-added] Property 'test_var:float' was added to 'catalog.Author'.
@@ -1540,46 +1548,46 @@ cdec reference test: 1 deviation(s) from the reference:
 
 ```
 gate fails → reviewer agrees the change is intended
-           → author runs `cdec reference update`
+           → author runs `cdec check --automatic-exceptions reference`
            → commits the new reference.xmi in the same PR
            → gate passes
 ```
 
 | Command | Meaning |
 |---|---|
-| `cdec reference update` | "Snapshot **what the code is**." — accept a change. |
+| `cdec check --automatic-exceptions reference` | "Snapshot **what the code is**." — accept a change. |
 | `cdec reference set MODEL` | "Declare **what the code should become**." — accept a design. |
 
 > **Directional gotcha.** `cdec reference show` treats the reference as the *target* and your
 > code as the current state, so elements present in the reference but missing from the code
 > render as **green additions** ("still to build"). That is deliberately the inverse of
-> `cdec reference test` and `diff-vs-xmi`, where the reference is the *old* side.
+> `cdec check` and `diff-vs-xmi`, where the reference is the *old* side.
 
 ---
 
 # 4 · Implementation locks
 
-Engine C answers a narrower question than the rest of the catalogue: not "did intent drift"
-or "does the code obey the tag", but **did this body change at all**.
+`implementation-locks` answers a narrower question than the rest of the catalogue: not
+"did intent drift" or "does the code obey the tag", but **did this body change at all**.
 
-Two ways to declare a lock — the [`@locked` tag](#locked) in the source, or globs in
-`.cdec/config.yaml` for code you would rather not (or cannot) annotate:
+Turn it on with a rule entry, then declare what is frozen — the [`@locked` tag](#locked) in
+the source, or `targets:` globs for code you would rather not (or cannot) annotate:
 
 ```yaml
-# .cdec/config.yaml
-lock:
-  enabled: true                 # whether `cdec check` runs Engine C automatically
-  include_docstrings: false     # do docstring edits count as implementation changes?
-  targets:
-    - "orders.pricing.**"       # freeze an entire module subtree, tag-free
-  # lockfile: path/to/locks.yaml   (optional override; default .cdec/locks.yaml)
+# .cdec/rules.yaml
+rules:
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+    include_docstrings: false     # do docstring edits count as implementation changes?
+    targets:
+      - "orders.pricing.**"       # freeze an entire module subtree, tag-free
 ```
 
-Either way the **approved digest** lives in `.cdec/locks.yaml`, which is the audit trail and
-belongs in version control:
+Either way the **approved digest** lives in the `locks:` section of the same file, which is
+the audit trail and belongs in version control:
 
 ```yaml
-version: 1
 locks:
 - target: orders.Receipt.formatted
   kind: method                  # class | method | function
@@ -1596,7 +1604,7 @@ locks:
 | Kind | Headline | Meaning |
 |---|---|---|
 | `changed` | frozen implementation changed | The body's digest no longer matches the ledger. |
-| `missing` | declared `@locked` but not baselined | Tagged in source but never recorded — run `cdec lock set`. |
+| `missing` | declared `@locked` but not baselined | Tagged in source but never recorded — run `cdec check --automatic-exceptions locks`. |
 | `removed` | frozen element no longer exists | The locked element was deleted or renamed. |
 | `unlocked` | `@locked` tag was removed | The tag is gone but the ledger entry remains. **You cannot escape a lock by deleting the tag** — the ledger is the authority. (Glob-locked entries are exempt from this check.) |
 | `algo-mismatch` | digest algorithm changed | The ledger predates a fingerprinter change — review and re-baseline. |
@@ -1616,25 +1624,24 @@ locks:
 ### The privilege boundary
 
 ```bash
-cdec lock list --all      # what is lockable and what is locked
-cdec lock check           # the CI gate — exit 1 if anything changed
+cdec locks --all      # what is lockable and what is locked
+cdec check           # the CI gate — exit 1 if anything changed
 
-cdec lock set             # SAFE: only ADDS locks for newly tagged code.
+cdec check --automatic-exceptions locks             # SAFE: only ADDS locks for newly tagged code.
                           # Anyone can run it; it can never erase evidence.
 
-cdec lock set --target orders.Receipt.formatted --force \
-              --reason "approved settlement fix" --owner alice
+cdec check --automatic-exceptions locks --force
                           # PRIVILEGED: re-baselines a drifted digest, or prunes
                           # an entry whose tag was deleted.
 ```
 
-Only `--force` re-baselines, and it produces a **reviewable diff on `.cdec/locks.yaml`**. Put
+Only `--force` re-baselines, and it produces a **reviewable diff on the `locks:` section of `.cdec/rules.yaml`**. Put
 that file behind CODEOWNERS and re-baselining becomes a lead-only action that always leaves a
 trail:
 
 ```
 # CODEOWNERS
-/.cdec/locks.yaml    @your-org/tech-leads
+/.cdec/rules.yaml    @your-org/tech-leads
 ```
 
 That is the whole design: a junior developer or an agent *can* change locked code — they just
@@ -1652,18 +1659,24 @@ skill of adopting the tool without the team turning it off.
 | `severity: warning` | any `rules.yaml` rule | Reported, does not fail | Introducing a rule; tighten later with `--fail-on warning`. |
 | `severity: off` | any `rules.yaml` rule | Entry is never loaded | Temporarily parking a rule without deleting its config. |
 | `ignore: [globs]` | any `rules.yaml` rule | Named elements exempt | A known, permanent exception — a composition root, generated code, a legacy package. |
-| `.cdec/baseline.yaml` | any `rules.yaml` rule | Today's violations grandfathered; **new** ones still fail | Adopting a rule on a codebase that already breaks it. This is the ratchet — write it with `cdec check --update-baseline` and let it shrink over time. |
+| the `exceptions:` section of `.cdec/rules.yaml` | any `rules.yaml` rule | Today's violations grandfathered; **new** ones still fail | Adopting a rule on a codebase that already breaks it. This is the ratchet — write it with `cdec check --automatic-exceptions rules` and let it shrink over time. |
 | `entry_points`, `framework_bases` | `dangling-classes` | Class treated as reachable | Framework-instantiated types the model cannot see wired up. |
 | `allow=[…]` | `@no_instantiation` | Listed types may be built | Heuristic false positives in Python; genuinely fine constructions (collections, value types). |
 | `--base-ref REF` | `scope: diff` rules | Baseline is a live git ref, not `reference.xmi` | PR pipelines — compare against the target branch instead of a committed snapshot. |
-| `cdec check --update-reference` | Engines A and D | Re-snapshot the agreed architecture | A reviewer approved a deliberate architectural change; commit the new `reference.xmi` in the same PR. |
-| `cdec lock set --force` | Engine C | Re-baseline a frozen implementation | A lead approved a change to locked code. Leaves a reviewable ledger diff. |
-| `--bypass-locks` / `CDEC_LOCK_BYPASS` | Engine C | Violations collected but not fatal; audit banner printed; `summary.bypassed` set in JSON | A genuine emergency. Have CI **reject bypassed runs** on protected branches. |
+| `cdec exceptions allow KEY` | A, B, D | One named issue accepted, with a reason | A specific violation the team agreed is fine. Recorded in `exceptions:`, reviewable in the diff, revocable. |
+| `cdec check --automatic-exceptions reference` | A and D | Re-snapshot the agreed architecture | A reviewer approved a deliberate architectural change; commit the new `reference.xmi` in the same pull request. |
+| `cdec check --automatic-exceptions locks --force` | C | Re-baseline a frozen implementation | A lead approved a change to locked code. Leaves a reviewable ledger diff. |
+| `--bypass-locks` / `CDEC_LOCK_BYPASS` | C | Violations collected but not fatal; audit banner printed; `summary.bypassed` set in JSON | A genuine emergency. Have CI **reject bypassed runs** on protected branches. |
 | `--fail-on none` | whole run | Report only, never fail | Week 1 of adoption: collect data before turning anything on. |
-| `--no-locks` | Engine C within `cdec check` | Skip lock verification | Running `cdec lock check` as a separate pipeline stage. |
 
-A missing baseline is **not** an escape hatch: `scope: diff` rules with nothing to compare
-against are listed under "skipped" in the report rather than silently passing.
+Two things are deliberately **not** escape hatches:
+
+- **A missing baseline.** `scope: diff` rules with nothing to compare against are listed
+  under "skipped" in the report rather than silently passing. The same is true of any rule
+  that cannot run — a `tag-conformance` rule on TypeScript, say.
+- **An exception for a lock.** `cdec exceptions allow` refuses an `L-` key, and
+  `--automatic-exceptions rules` will not grandfather one. There is exactly one way to
+  accept a change to frozen code, and it rewrites the `locks:` section.
 
 ---
 
@@ -1673,7 +1686,7 @@ against are listed under "skipped" in the report rather than silently passing.
 
 | You want to say | Reach for |
 |---|---|
-| "Nothing about the public shape changes without review" | `cdec reference test` ([§3](#3--the-reference-gate)) |
+| "Nothing about the public shape changes without review" | [`reference-architecture`](#3--the-reference-gate) |
 | "This package sits at the bottom of the graph" | [`forbidden-package-references`](#forbidden-package-references) |
 | "Our layers only depend downward" (layers ≠ directories) | [`@layer`](#layer) + [`layer-dependencies`](#layer-dependencies) |
 | "Packages must stay independently shippable" | [`no-cyclic-package-dependencies`](#no-cyclic-package-dependencies) |
@@ -1691,14 +1704,14 @@ against are listed under "skipped" in the report rather than silently passing.
 | Capability | Python | C# | Odin | Lua | Julia | TypeScript | Svelte |
 |---|---|---|---|---|---|---|---|
 | Parse to model, diagrams, diff | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `rules.yaml` rules (Engine A) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Model rules (Engine A) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Constraint tags | ✅ decorators | ✅ attributes | ✅ `//@cdec` | ✅ `---@cdec` | ✅ macros | ❌ | ❌ |
-| `enforce` (Engine B) | ✅ heuristic | ✅ precise | ✅ precise | ✅ idiom-based | ✅ name-based | — | — |
-| `lock` (Engine C) | ✅ `py-ast/1` | ✅ `cs-ts/1` | ✅ `odin-ts/1` | ✅ `lua-ts/1` | ✅ `jl-ts/1` | ❌ | ❌ |
-| Reference gate (Engine D) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `tag-conformance` (B) | ✅ heuristic | ✅ precise | ✅ precise | ✅ idiom-based | ✅ name-based | ❌ | ❌ |
+| `implementation-locks` (C) | ✅ `py-ast/1` | ✅ `cs-ts/1` | ✅ `odin-ts/1` | ✅ `lua-ts/1` | ✅ `jl-ts/1` | ❌ | ❌ |
+| `reference-architecture` (D) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Activity / sequence tags | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-**"Precise" vs "heuristic"** describes how Engine B recognises a construction, which is the
+**"Precise" vs "heuristic"** describes how `tag-conformance` recognises a construction, which is the
 only place the languages differ materially in what they can catch:
 
 - **precise** (C#, Odin) — the grammar distinguishes construction outright, so false
@@ -1710,8 +1723,9 @@ only place the languages differ materially in what they can catch:
 - **idiom-based** (Lua) — `T.new(…)` and `setmetatable(t, T)` are recognised; a bare `T(…)`
   is `__call`, not a constructor. Under-reports on unusual constructor conventions.
 
-`cdec lock` and `cdec enforce` refuse an unsupported language **by name** rather than
-reporting "nothing found", so "unsupported" and "nothing tagged" are never confused.
+`implementation-locks` and `tag-conformance` refuse an unsupported language **by name**:
+`cdec check` lists the rule as *skipped* with the reason, so "unsupported" and "nothing
+tagged" are never confused with "clean".
 
 > **Per-language guides.** Each language has a complete walk-through — how it maps onto the
 > UML model, how its tags are spelled, what each engine sees, and its parser gotchas:
@@ -1725,16 +1739,18 @@ Turning everything on at once on a mature codebase produces a wall of red and a 
 disables the tool.
 
 1. **Observe** — `cdec check --fail-on none`. Nothing fails; you collect data.
-2. **Ratchet** — add rules, run `cdec check --update-baseline`, commit the baseline. Existing
+2. **Ratchet** — add rules, run `cdec check --automatic-exceptions rules`, commit the baseline. Existing
    problems are grandfathered; new ones fail.
-3. **Tag the crown jewels** — `@sealed` / `@immutable` / `@factory` where the design genuinely
-   matters, then turn on `--enforce`.
-4. **Lock the untouchables** — `@locked` on the handful of bodies that must not change; put
-   `.cdec/locks.yaml` behind CODEOWNERS.
-5. **Consider the reference gate** — once the architecture is stable enough that every
-   structural change *should* be deliberate.
+3. **Tag the crown jewels** — `@sealed` / `@immutable` / `@factory` where the design
+   genuinely matters, then add a `tag-conformance` rule. Its `rules:` option lets you adopt
+   one tag at a time.
+4. **Lock the untouchables** — `@locked` on the handful of bodies that must not change, an
+   `implementation-locks` rule, and `.cdec/rules.yaml` behind CODEOWNERS.
+5. **Consider `reference-architecture`** — once the architecture is stable enough that
+   every structural change *should* be deliberate.
 
-Then work the baseline down over time. `baseline.yaml` shrinking is a good team metric.
+Then work the exceptions down over time. A shrinking `exceptions:` list is a good team
+metric, and `cdec exceptions prune` keeps it honest.
 
 ### Make the messages teach
 

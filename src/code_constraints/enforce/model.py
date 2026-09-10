@@ -1,11 +1,11 @@
-"""Result types for the `cdec enforce` conformance engine.
+"""Result types for the conformance engine (Engine B).
 
-Deliberately separate from `code_constraints.lint.Violation`: the two engines are decoupled
-by design. `cdec check` (Engine A) answers "did the architectural intent drift
-over time"; `cdec enforce` (Engine B) answers "does the code actually obey the
-tag right now" by inspecting method bodies. They share the rule *catalog* and the
-review-key scheme (`code_constraints.core.keys`) so one waiver file can cover both
-— nothing else.
+Deliberately separate from `code_constraints.lint.Violation`: the two engines
+are decoupled by design. Engine A answers "did the architectural intent drift
+over time"; Engine B answers "does the code actually obey the tag right now" by
+inspecting method bodies. They share the rule *catalog* and the review-key
+scheme (`code_constraints.core.keys`) so one exceptions list can cover both —
+nothing else. Both are reached through rule types in `.cdec/rules.yaml`.
 """
 
 from __future__ import annotations
@@ -43,19 +43,19 @@ def format_findings(findings: list[Finding], *, suppressed: int = 0) -> str:
     """Render findings as a human-readable report.
 
     Each line leads with the review key so the output can be saved, marked up,
-    and fed back through `cdec baseline patch`.
+    and fed back through `cdec exceptions patch`.
     """
     if not findings:
-        text = "cdec enforce: no conformance violations.\n"
+        text = "no conformance violations.\n"
         if suppressed:
-            text += f"({suppressed} finding(s) silenced by baseline.)\n"
+            text += f"({suppressed} finding(s) silenced by an exception.)\n"
         return text
-    lines = [f"cdec enforce: {len(findings)} conformance violation(s):"]
+    lines = [f"{len(findings)} conformance violation(s):"]
     for f in sorted(findings, key=lambda x: (x.file, x.line, x.rule)):
         loc = f"{f.file}:{f.line}" if f.file else f.qualified_name
         lines.append(f"  - [{f.key()}] [{f.rule}] {loc}: {f.message}")
     if suppressed:
-        lines.append(f"({suppressed} finding(s) silenced by baseline.)")
+        lines.append(f"({suppressed} finding(s) silenced by an exception.)")
     return "\n".join(lines) + "\n"
 
 

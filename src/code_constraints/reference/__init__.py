@@ -1,9 +1,10 @@
-"""`cdec reference` — architecture-reference gate.
+"""The architecture-reference gate.
 
-A dedicated structural comparator (decoupled from `code_constraints.core.diff` and from the
-`code_constraints.lint` / `code_constraints.enforce` engines) that fails when the current code deviates in
-any structural way from a stored reference XMI snapshot. Used by `cdec reference
-test` as a CI gate.
+A dedicated structural comparator (decoupled from `code_constraints.core.diff`
+and from the `code_constraints.lint` / `code_constraints.enforce` engines) that
+reports every structural deviation of the current code from a stored reference
+model. Driven by the `reference-architecture` rule type in `.cdec/rules.yaml`,
+which is what `cdec check` runs.
 """
 
 from __future__ import annotations

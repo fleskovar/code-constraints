@@ -11,11 +11,12 @@ import importlib.resources
 from pathlib import Path
 
 from code_constraints.core.model import SUPPORTED_LANGUAGES
+from code_constraints.core.rulesdoc import RULES_FILENAME
 from code_constraints.lint.config import (
     BASELINE_FILENAME,
     CONFIG_FILENAME,
+    LOCKS_FILENAME,
     REFERENCE_FILENAME,
-    RULES_FILENAME,
 )
 
 SUPPORTED_LANGS = SUPPORTED_LANGUAGES
@@ -100,8 +101,11 @@ def _asset(rel: str) -> Path:
 def init_cdec_config(
     config_dir: Path, lang: str, source: Path, force: bool
 ) -> list[Path]:
-    """Scaffold a `.cdec/` folder (config, rules, baseline, README, .gitignore)
-    and snapshot a reference XMI from `source`. Returns the files written.
+    """Scaffold a `.cdec/` folder and snapshot a reference model from `source`.
+
+    One `rules.yaml` carries the settings and the rules; the exceptions granted
+    and the lock ledger are appended to its tool-managed tail as they are
+    earned. Returns the files written.
 
     Raises ScaffoldError on an unsupported language, or if a target file exists
     and `force` is False.
@@ -113,9 +117,10 @@ def init_cdec_config(
     written: list[Path] = []
 
     files = [
-        (config_dir / CONFIG_FILENAME, _CONFIG_TEMPLATE.format(lang=lang, source=_posix(source))),
-        (config_dir / RULES_FILENAME, _RULES_TEMPLATE),
-        (config_dir / BASELINE_FILENAME, "violations: {}\n"),
+        (
+            config_dir / RULES_FILENAME,
+            _RULES_TEMPLATE.format(lang=lang, source=_posix(source)),
+        ),
         (config_dir / "README.md", _README_TEMPLATE),
     ]
     for path, content in files:
@@ -128,7 +133,9 @@ def init_cdec_config(
     gitignore.write_text("cache/\n", encoding="utf-8")
     written.append(gitignore)
 
-    # Snapshot a reference XMI so the first `cdec check` works.
+    # Snapshot a reference model up front. It is the baseline every diff-scope
+    # rule needs, and "where does reference.xmi come from" is the first question
+    # anybody asks — so scaffolding answers it rather than deferring it.
     reference_path = config_dir / REFERENCE_FILENAME
     if source.exists():
         from code_constraints.core.xmi_writer import write_project
@@ -138,6 +145,105 @@ def init_cdec_config(
         written.append(reference_path)
 
     return written
+
+
+def migrate_cdec_config(config_dir: Path) -> tuple[list[Path], list[Path]]:
+    """Fold `config.yaml` / `baseline.yaml` / `locks.yaml` into `rules.yaml`.
+
+    Returns (files written, files removed). The old files are deleted only once
+    their content has been read back out of the new one, so a failed migration
+    leaves the project exactly as it was.
+    """
+    import yaml
+
+    from code_constraints.core.rulesdoc import load_document, write_sections
+    from code_constraints.lock.store import load_locks, write_locks
+    from code_constraints.waivers.store import load_waivers, save_waivers
+
+    rules_path = config_dir / RULES_FILENAME
+    legacy_config = config_dir / CONFIG_FILENAME
+    legacy_baseline = config_dir / BASELINE_FILENAME
+    legacy_locks = config_dir / LOCKS_FILENAME
+    if not any(p.is_file() for p in (legacy_config, legacy_baseline, legacy_locks)):
+        return [], []
+
+    # 1. Settings, prepended as plain top-level keys above whatever rules.yaml
+    #    already holds, so the rules and their comments are untouched.
+    if legacy_config.is_file():
+        with legacy_config.open(encoding="utf-8") as fh:
+            old = yaml.safe_load(fh) or {}
+        if not isinstance(old, dict):
+            raise ScaffoldError(f"{legacy_config}: top-level must be a mapping")
+        existing = load_document(rules_path) if rules_path.is_file() else {}
+        header = _migrated_settings_header(old, existing)
+        body = rules_path.read_text(encoding="utf-8") if rules_path.is_file() else _EMPTY_RULES
+        rules_path.parent.mkdir(parents=True, exist_ok=True)
+        rules_path.write_text(header + body, encoding="utf-8")
+        # A `lock:` settings block becomes an `implementation-locks` rule. Only
+        # a configured one is carried over: inventing a rule the project never
+        # opted into would turn a migration into a new gate.
+        lock_cfg = old.get("lock") or {}
+        if isinstance(lock_cfg, dict) and lock_cfg.get("targets"):
+            targets = ", ".join(f'"{t}"' for t in lock_cfg.get("targets") or [])
+            with rules_path.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    _MIGRATED_LOCK_RULE.format(
+                        targets=f"[{targets}]",
+                        include_docstrings=str(
+                            bool(lock_cfg.get("include_docstrings", False))
+                        ).lower(),
+                    )
+                )
+
+    # 2. Exceptions and locks, read through the loaders that already understand
+    #    both the old and the new shape, then written back in the new one.
+    store = load_waivers(config_dir)
+    entries = load_locks(config_dir)
+    if store.waivers:
+        save_waivers(config_dir, store)
+    if entries:
+        write_locks(config_dir, entries.values())
+
+    # 3. Only now that everything demonstrably landed, drop the old files.
+    reread = load_document(rules_path)
+    if store.waivers and not reread.get("exceptions"):
+        raise ScaffoldError(f"migration aborted: exceptions did not land in {rules_path}")
+    if entries and not reread.get("locks"):
+        raise ScaffoldError(f"migration aborted: locks did not land in {rules_path}")
+
+    removed: list[Path] = []
+    for path in (legacy_config, legacy_baseline, legacy_locks):
+        if path.is_file():
+            path.unlink()
+            removed.append(path)
+    return [rules_path], removed
+
+
+def _migrated_settings_header(old: dict, existing: dict) -> str:
+    """Render a legacy config.yaml's settings as rules.yaml top-level keys.
+
+    Keys already present in rules.yaml win — that is the file the user has been
+    editing, so it is the more current statement of intent.
+    """
+    lines = ["# Project settings (migrated from config.yaml).\n"]
+    lines.append(f"language: {existing.get('language') or old.get('language') or 'python'}\n")
+    lines.append(f"source: {existing.get('source') or old.get('source') or '.'}\n")
+    reference = existing.get("reference")
+    if reference is None:
+        legacy_baseline = old.get("baseline")
+        if isinstance(legacy_baseline, dict):
+            reference = legacy_baseline.get("reference")
+    if reference:
+        lines.append(f"reference: {reference}\n")
+    output = existing.get("output") or old.get("output") or {}
+    if isinstance(output, dict) and (output.get("json") or output.get("log")):
+        lines.append("output:\n")
+        if output.get("json"):
+            lines.append(f"  json: {output['json']}\n")
+        if output.get("log"):
+            lines.append(f"  log: {output['log']}\n")
+    lines.append("\n")
+    return "".join(lines)
 
 
 # ---------- copy helpers ----------
@@ -187,7 +293,9 @@ def has_shim(lang: str) -> bool:
 
 def write_ci_scripts(project_root: Path, lang: str, source: Path) -> list[Path]:
     """Write `cdec-ci.bat` (Windows) and `cdec-ci.sh` (bash) into the project root.
-    Both run `cdec check` then `cdec enforce` and propagate non-zero exits."""
+
+    Both are one line of real work: `cdec check` is the whole gate, and its exit
+    code is the whole answer."""
     src = _posix(source)
     bat = project_root / "cdec-ci.bat"
     sh = project_root / "cdec-ci.sh"
@@ -234,103 +342,123 @@ def _posix(p: Path) -> str:
     return str(p).replace("\\", "/")
 
 
-_CONFIG_TEMPLATE = """\
-# Project-level settings for `cdec check`.
-language: {lang}                # python | csharp | typescript | svelte | odin | lua | julia
-source: {source}                 # parsed by `cdec check` (relative to project root)
-baseline:
-  reference: .cdec/reference.xmi # default baseline XMI; null to require --base-ref
-output:
-  json: null                     # optional default for --json-out
-  log: null                      # optional default for --log-out
+_EMPTY_RULES = "rules: []\n"
 
-# Implementation locks (`cdec lock`, Engine C). A locked class/function may not
-# change at all: its normalised AST is digested into .cdec/locks.yaml, so moving
-# or reformatting code never trips a lock but any semantic edit does.
-lock:
-  enabled: true                  # run lock verification as part of `cdec check`
-  include_docstrings: false      # count docstrings / /// comments as implementation
-  targets: []                    # qualified-name globs locked WITHOUT a tag,
-                                 # e.g. ["tests.**"] to freeze all test logic
+_MIGRATED_LOCK_RULE = """
+  # Migrated from the `lock:` section of config.yaml. Locks are a rule now, so
+  # they are configured, reported and gated exactly like every other law here.
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+    include_docstrings: {include_docstrings}
+    targets: {targets}
 """
 
 _RULES_TEMPLATE = """\
-# Architectural-lint rules. Each entry has:
-#   id        — stable identifier, referenced in baseline.yaml
-#   type      — rule implementation (see list below)
-#   scope     — diff | snapshot (default depends on rule)
+# ============================================================================
+# .cdec/rules.yaml — everything `cdec check` needs, in one committed file.
+#
+#   settings     what to check and where           (below)
+#   rules:       the laws that are enforced        (below)
+#   exceptions:  violations you accepted, and why  (written by the tool)
+#   locks:       digests of frozen implementations (written by the tool)
+#
+# The last two live in a marked section at the end of the file. The tool
+# rewrites only that section, so every comment and message you write up here
+# survives untouched.
+#
+# One command runs all of it:
+#
+#   cdec check                                   verify everything
+#   cdec check --automatic-exceptions reference  snapshot .cdec/reference.xmi
+#   cdec check --automatic-exceptions rules      grandfather today's violations
+#   cdec check --automatic-exceptions locks      record digests for @locked code
+#   cdec exceptions allow V-1A2B3C4D --reason .. accept one issue, with a reason
+# ============================================================================
+
+language: {lang}    # python | csharp | typescript | svelte | odin | lua | julia
+source: {source}    # the source tree `cdec check` parses
+
+# The baseline every `scope: diff` rule compares against, and the model the
+# `reference-architecture` rule gates on. `cdec init` snapshots it for you;
+# re-snapshot with `cdec check --automatic-exceptions reference`.
+reference: .cdec/reference.xmi
+
+output:
+  json: null       # optional default for --json-out
+  log: null        # optional default for --log-out
+
+# ---------------------------------------------------------------------------
+# Rules. Every entry takes:
+#   id        — stable identifier, and the heading violations are grouped under
+#   type      — which rule to run (list below)
 #   severity  — error | warning | off
-#   message   — optional explanation printed when the rule fires; supports
-#               {placeholders} and YAML block scalars (`message: |` for
-#               multi-line). Use this to tell developers WHY the rule exists
-#               and HOW to fix it, not just that it failed.
+#   scope     — diff | snapshot (defaults per rule type)
+#   message   — what to print when it fires. Supports {{placeholders}} and YAML
+#               block scalars (`message: |`). USE IT: a rule that explains why
+#               it exists teaches; one that just says "violation" breeds
+#               resentment.
 #   ignore    — list of qualified-name globs to exempt
 #
-# Available placeholders by rule type:
-#   no-new-classes / no-removed-classes / dangling-classes / max-class-fanout:
-#     {qualified_name}              (max-class-fanout adds {fanout}, {limit})
-#   frozen-members:
-#     {qualified_name}, {member}, {kind}, {action}
-#   forbidden-references / forbidden-package-references:
-#     {qualified_name}, {source}, {target}
-#   subclass-naming:
-#     {qualified_name}, {name}, {base}, {pattern}
-#   no-cyclic-package-dependencies:
-#     {cycle}
-#   frozen-rules:
-#     {qualified_name}, {rule}, {member}, {action}
-#   layer-dependencies:
-#     {qualified_name}, {source}, {target}, {source_layer}, {target_layer}
+# `cdec check` is opt-in — an empty list enforces nothing. Add laws one at a
+# time, as the team agrees on them.
 #
-# Known types:
-#   no-new-classes, no-removed-classes, dangling-classes, frozen-members,
-#   frozen-rules, forbidden-references, forbidden-package-references,
-#   layer-dependencies, subclass-naming, no-cyclic-package-dependencies,
-#   max-class-fanout
+# --- model rules (read the parsed architecture) ---
+#   no-new-classes, no-removed-classes ....... structural drift  (scope: diff)
+#   frozen-members ........................... a class's public shape (diff)
+#   frozen-rules ............................. the constraint tags themselves (diff)
+#   forbidden-references ..................... class A may not reference class B
+#   forbidden-package-references ............. package A may not reference package B
+#   no-cyclic-package-dependencies ........... no dependency cycles
+#   layer-dependencies ....................... @layer tags + an allowed-direction matrix
+#   subclass-naming .......................... subclasses of X must be named Y
+#   dangling-classes ......................... nothing references this class
+#   max-class-fanout ......................... a class references too many others
 #
-# frozen-rules (scope: diff) freezes the architectural-rule tags
-# (@no_instantiation, @sealed, @layer, …) recorded in the baseline: removing or
-# weakening a tag fails the check. It never inspects method bodies — that's the
-# job of the separate `cdec enforce` command.
+# --- source rules (re-read the code itself) ---
+#   tag-conformance .......................... the implementation obeys its
+#                                              @sealed / @immutable / @factory /
+#                                              @no_instantiation tags
+#   implementation-locks ..................... an @locked body may not change
+#   reference-architecture ................... no structural deviation from
+#                                              reference.xmi at all
 #
-# layer-dependencies (scope: snapshot) reads @layer("name") tags and an
-# allowed-direction matrix and flags forbidden cross-layer references.
+# Placeholders available in `message`, by type:
+#   no-new-classes / no-removed-classes / dangling-classes:
+#     {{qualified_name}}                (max-class-fanout adds {{fanout}}, {{limit}})
+#   frozen-members:            {{qualified_name}}, {{member}}, {{kind}}, {{action}}
+#   forbidden-*-references:    {{qualified_name}}, {{source}}, {{target}}
+#   subclass-naming:           {{qualified_name}}, {{name}}, {{base}}, {{pattern}}
+#   no-cyclic-package-dependencies: {{cycle}}
+#   frozen-rules:              {{qualified_name}}, {{rule}}, {{member}}, {{action}}
+#   layer-dependencies:        {{qualified_name}}, {{source}}, {{target}},
+#                              {{source_layer}}, {{target_layer}}
+#   tag-conformance:           {{qualified_name}}, {{rule}}, {{detail}}, {{message}}
+#   implementation-locks:      {{qualified_name}}, {{kind}}, {{message}}
+#   reference-architecture:    {{qualified_name}}, {{category}}, {{member}}, {{message}}
+#
+# Every rule and every source tag is documented with options and worked
+# pass/fail examples in docs/RULES_CATALOGUE.md.
+# ---------------------------------------------------------------------------
 
 rules: []
 
-# Examples (uncomment and adapt):
-#
-# - id: no-new-classes
-#   type: no-new-classes
-#   severity: error
-#   ignore:
-#     - "tests.**"
-#
-# - id: factories-must-end-in-Factory
-#   type: subclass-naming
-#   severity: error
-#   base: "IFactory"
-#   name_pattern: ".*Factory$"
+# Examples — uncomment and adapt:
 #
 # - id: domain-must-not-depend-on-ui
 #   type: forbidden-package-references
 #   severity: error
 #   from: ["myapp.domain.**"]
 #   to:   ["myapp.ui.**"]
+#   message: |
+#     Layering violation: '{{source}}' must not depend on '{{target}}'.
+#     The domain is pure business rules; move the reference to whichever
+#     package owns the workflow.
 #
-# - id: lock-public-api
-#   type: frozen-members
+# - id: no-new-classes
+#   type: no-new-classes
 #   severity: error
-#   classes: ["myapp.api.**"]
-#
-# - id: no-cycles
-#   type: no-cyclic-package-dependencies
-#   severity: warning
-#
-# - id: freeze-architectural-tags
-#   type: frozen-rules
-#   severity: error
-#   classes: ["myapp.**"]
+#   ignore: ["tests.**"]
 #
 # - id: layering
 #   type: layer-dependencies
@@ -339,36 +467,48 @@ rules: []
 #     ui:     [domain]
 #     domain: [data]
 #     data:   []
+#
+# - id: tags-must-be-honoured
+#   type: tag-conformance
+#   severity: error
+#
+# - id: frozen-implementations
+#   type: implementation-locks
+#   severity: error
+#
+# - id: public-shape-is-frozen
+#   type: reference-architecture
+#   severity: error
 """
 
 _README_TEMPLATE = """\
-# `.cdec/` — architectural-lint configuration
+# `.cdec/` — architectural constraints for this project
 
-`cdec check` reads this folder. Files:
+Two files, and one command that reads them.
 
-- `config.yaml` — project settings (language, source path, default baseline)
-- `rules.yaml` — rule definitions
-- `reference.xmi` — committed reference snapshot; regenerated with
-  `cdec check --update-reference`
-- `baseline.yaml` — accepted violations, each with the reason it was accepted;
-  written by `cdec baseline allow` / `cdec baseline patch`, or wholesale with
-  `cdec check --update-baseline`
-- `locks.yaml` — approved implementation digests for `@locked` elements;
-  written by `cdec lock set`
-- `cache/` — transient parse artefacts (gitignored)
-
-Every rule type usable in `rules.yaml`, and every source tag (`@sealed`,
-`@immutable`, `@factory`, `@layer`, `@locked`, …), is documented with options and
-worked pass/fail examples in `docs/RULES_CATALOGUE.md` in the code-constraints
-repository.
-
-## Accepting a violation
-
-Every issue prints a stable key (`V-` drift, `F-` conformance, `L-` lock). Quote
-it to accept the issue as known-and-allowed, with a reason:
+| File | What it is |
+|---|---|
+| `rules.yaml` | Settings, the rules enforced, the exceptions granted, and the digests of frozen implementations. Commit it. |
+| `reference.xmi` | A snapshot of the architecture, used as the baseline for `scope: diff` rules and by the `reference-architecture` rule. Commit it. |
+| `cache/` | Transient parse artefacts. Gitignored. |
 
 ```
-cdec baseline allow V-1A2B3C4D --reason "agreed in ARCH-42"
+cdec check
+```
+
+That is the whole gate. Architectural rules, source-tag conformance,
+implementation locks and the reference gate are all rule types in `rules.yaml`,
+so there is one command to run in CI and one exit code to read.
+
+## Accepting things
+
+Every issue prints a stable key (`V-` a configured rule, `F-` tag conformance,
+`L-` a lock, `R-` a reference deviation). The key is derived from what the issue
+*is*, never from where it sits, so reformatting or moving code never invalidates
+a decision you recorded.
+
+```
+cdec exceptions allow V-1A2B3C4D --reason "agreed in ARCH-42"
 ```
 
 For a batch, save the report, mark the lines you accept with `[ALLOW]` (or
@@ -376,63 +516,69 @@ For a batch, save the report, mark the lines you accept with `[ALLOW]` (or
 
 ```
 cdec check --log-out check.log
-cdec baseline patch --file check.log
+cdec exceptions patch --file check.log
 ```
 
-`cdec baseline list` shows what is accepted and why; `cdec baseline remove KEY`
-withdraws it; `cdec baseline prune` drops waivers whose issue no longer occurs —
-worth running periodically, since a stale waiver pre-approves the next violation
-just like it. Keys are derived from what an issue *is*, not where it sits, so
-reformatting or moving code never invalidates a waiver.
+`cdec exceptions list` shows what is accepted and why; `remove KEY` withdraws
+it; `prune` drops exceptions whose issue no longer occurs — worth running
+periodically, since a stale one pre-approves the next violation just the same.
 
-Lock violations (`L-`) are deliberately outside this loop — see below.
-
-## Implementation locks
-
-Tag a class or function `@locked` (Python) / `[Locked]` (C#) and run
-`cdec lock set` to freeze its implementation. From then on `cdec check` fails if
-the body changes, if the element is deleted, or if the tag is removed. Identity
-is AST-based, so adding code above a locked function never trips it.
-
-Accepting a change is the privileged step:
+To grandfather everything at once when adopting a rule on an existing codebase:
 
 ```
-cdec lock set --target myapp.Billing.settle --force --reason "why"
+cdec check --automatic-exceptions rules
 ```
 
-Put `.cdec/locks.yaml` behind a CODEOWNERS entry so only leads can approve that
-diff. To ship without re-baselining, `cdec check --bypass-locks --bypass-reason
-"..."` prints an audit banner and passes; reject bypassed runs in CI by
-checking `summary.bypassed` in `--json-out`.
+## Locks are the exception to exceptions
+
+`L-` issues cannot be accepted through `cdec exceptions`. Tag a class or
+function `@locked` (Python) / `[Locked]` (C#), add an `implementation-locks`
+rule, and record the digest:
+
+```
+cdec check --automatic-exceptions locks
+```
+
+That is safe for anyone to run: without `--force` it can only *add* locks, never
+erase the evidence that a frozen body changed. Accepting a change to locked code
+is the privileged step:
+
+```
+cdec check --automatic-exceptions locks --force
+```
+
+It rewrites the `locks:` section, which is a reviewable diff. Put `rules.yaml`
+behind a CODEOWNERS entry and re-baselining becomes a lead-only action that
+always leaves a trail. To ship without re-baselining,
+`cdec check --bypass-locks --bypass-reason "..."` prints an audit banner and
+passes; reject bypassed runs in CI by checking `summary.bypassed` in
+`--json-out`.
 
 ## CI recipes
 
-Pre-merge check against `main`:
+Pre-merge, against the target branch:
 
 ```
 cdec check --base-ref origin/main --json-out lint.json
 ```
 
-Drift check against the committed reference:
+Against the committed reference:
 
 ```
 cdec check
 ```
 
-Either fails with exit code 1 on any violation at or above `--fail-on`
-severity (default: `error`).
+Either exits 1 on any violation at or above `--fail-on` severity (default:
+`error`).
 """
 
 _CI_BAT_TEMPLATE = """\
 @echo off
-REM Architectural CI checks. Generated by `cdec`.
-REM Runs drift detection (`cdec check`) then conformance (`cdec enforce`).
+REM Architectural CI check. Generated by `cdec`.
+REM One command: every rule in .cdec/rules.yaml, one exit code.
 setlocal
 
 python -m code_constraints.cli check --config .cdec --source {source}
-if errorlevel 1 exit /b 1
-
-python -m code_constraints.cli enforce {source} --lang {lang}
 if errorlevel 1 exit /b 1
 
 echo code-constraints checks passed.
@@ -440,12 +586,11 @@ echo code-constraints checks passed.
 
 _CI_SH_TEMPLATE = """\
 #!/usr/bin/env bash
-# Architectural CI checks. Generated by `cdec`.
-# Runs drift detection (`cdec check`) then conformance (`cdec enforce`).
+# Architectural CI check. Generated by `cdec`.
+# One command: every rule in .cdec/rules.yaml, one exit code.
 set -euo pipefail
 
 python -m code_constraints.cli check --config .cdec --source {source}
-python -m code_constraints.cli enforce {source} --lang {lang}
 
 echo "code-constraints checks passed."
 """

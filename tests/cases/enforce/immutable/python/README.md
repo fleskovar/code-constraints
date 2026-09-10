@@ -4,7 +4,7 @@
 
 `@immutable` fires when a method **other than the constructor** assigns to one of the class's own fields. This case pins all three shapes side by side: constructor initialisation (silent), a read-only method (silent), a "modification" that returns a new instance (silent), and one reassignment (the violation).
 
-**Engine:** B — conformance — `cdec enforce`  
+**Engine:** B — conformance — the `tag-conformance` rule  
 **Constraint:** [`immutable`](../../../../../docs/RULES_CATALOGUE.md#immutable)  
 **Language:** Python  
 **Runner:** `tests/case_runner.py::_run_enforce`
@@ -51,7 +51,7 @@ Every element has a line. An element nobody can justify is an element to delete.
 
 ### The rules, stated once
 
-1. `cdec enforce` **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
+1. The `tag-conformance` rule **re-parses the source and reads method bodies**. It never consults the reference model or the diff, so it needs no baseline: the question is not "did intent drift" but "does this code obey its tags right now".
 2. A violation is an assignment whose **target is a field of the receiver** — `self.x` / `this.x` / `r.x` where `r` is the receiver parameter. An assignment to some *other* object's field is not a violation.
 3. The constructor is exempt: assignment there is *initialisation*. Here that means any method whose name is not `__init__`.
 4. The finding is attributed to the **class**, with the discriminator `{method}.{field}` — so two different methods mutating the same field, or one method mutating two fields, are separate findings with separate review keys.

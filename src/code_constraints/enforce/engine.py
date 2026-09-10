@@ -1,9 +1,10 @@
-"""Dispatcher for `cdec enforce` — the implementation-conformance engine.
+"""Dispatcher for the implementation-conformance engine (Engine B).
 
 This re-parses the current source independently and inspects method bodies. It
-never consults the reference model or the diff metadata (that's Engine A / `cdec check`).
-Findings are filtered against the waiver ledger by the *caller* (the CLI), so the engine
-itself stays a pure function of the source.
+never consults the reference model or the diff metadata (that is Engine A).
+Findings are filtered against the exceptions ledger by the *caller* (the
+`tag-conformance` rule), so the engine itself stays a pure function of the
+source.
 
 Per-language body analysis (`no-instantiation`, `factory`, `immutable`) lives in
 the language packages' `conformance` modules. The `sealed` check is structural

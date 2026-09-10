@@ -8,8 +8,9 @@ that no other test covers:
   the process;
 * a tool call and the equivalent `cdec` invocation report the same issue keys —
   if they diverge, `cdec_allow` silently stops matching what `cdec_check` printed;
-* the privilege boundaries survive the transport: locks are not waivable, and
-  `cdec_lock_set` still refuses to re-baseline drifted code without `force`.
+* the privilege boundaries survive the transport: locks are not acceptable as
+  exceptions, and `cdec_accept(what=["locks"])` still refuses to re-baseline
+  drifted code without `force`.
 """
 
 from __future__ import annotations
@@ -55,17 +56,26 @@ class Ledger:
         return Invoice()
 '''
 
-CONFIG = """\
+RULES = """\
 language: python
 source: src_tree
-baseline:
-  reference: .cdec/reference.xmi
-"""
+reference: .cdec/reference.xmi
 
-RULES = """\
 rules:
   - id: no-new-classes
     type: no-new-classes
+
+  - id: tags-must-be-honoured
+    type: tag-conformance
+    severity: error
+
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+
+  - id: public-shape-is-frozen
+    type: reference-architecture
+    severity: error
 """
 
 
@@ -79,12 +89,14 @@ def project(tmp_path):
 
     cdec = tmp_path / ".cdec"
     cdec.mkdir()
-    (cdec / "config.yaml").write_text(CONFIG, encoding="utf-8")
     (cdec / "rules.yaml").write_text(RULES, encoding="utf-8")
 
-    _cli(["reference", "update"], tmp_path)
-    _cli(["lock", "set"], tmp_path)
+    _cli(["check", "--automatic-exceptions", "reference,locks"], tmp_path)
     return tmp_path
+
+
+def _rules_doc(project):
+    return yaml.safe_load((project / ".cdec" / "rules.yaml").read_text(encoding="utf-8"))
 
 
 def _cli(args, cwd):
@@ -136,7 +148,21 @@ def test_status_reports_a_configured_project(project) -> None:
     assert out["configured"] is True
     assert out["language"] == "python"
     assert out["reference"]["exists"] is True
-    assert out["locks"]["count"] == 1
+    assert out["locks"] == 1
+    assert {r["type"] for r in out["rules"]} >= {
+        "tag-conformance", "implementation-locks", "reference-architecture"
+    }
+    assert out["rules_file"].endswith("rules.yaml")
+
+
+def test_rule_types_lists_what_can_go_in_rules_yaml(tmp_path) -> None:
+    """An agent writing a rule needs the real `type:` values, not a guess."""
+    out = _call(tmp_path, "cdec_rule_types")
+    by_type = {r["type"]: r for r in out["rule_types"]}
+    assert "forbidden-package-references" in by_type
+    assert by_type["tag-conformance"]["reads_source"] is True
+    assert by_type["implementation-locks"]["baselines_itself"] is True
+    assert by_type["no-new-classes"]["default_scope"] == "diff"
 
 
 def test_rules_lists_the_catalogue(tmp_path) -> None:
@@ -162,38 +188,35 @@ def test_paths_outside_the_root_still_work_when_absolute(project, tmp_path) -> N
     assert out["classes"] >= 2
 
 
-# ---------------- the engines ----------------
+# ---------------- the gate ----------------
 
-def test_enforce_finds_the_seeded_violation(project) -> None:
-    out = _call(project, "cdec_enforce")
-    assert out["ok"] is False
-    rules = {f["rule"] for f in out["findings"]}
+def test_check_runs_every_rule_in_one_call(project) -> None:
+    """One tool, one verdict — the whole reason the surface was collapsed."""
+    out = _call(project, "cdec_check")
+    assert out["ok"] is False, "the seeded conformance violation should fail the gate"
+    engines = {v["engine"] for v in out["violations"]}
+    assert engines == {"enforce"}, "only the tag rule should fire on a clean tree"
+    rules = {v["rule"] for v in out["violations"]}
     assert "no-instantiation" in rules
 
 
-def test_check_runs_all_three_engines_in_one_call(project) -> None:
-    out = _call(project, "cdec_check", enforce=True)
-    assert out["ok"] is False, "the seeded conformance violation should fail the gate"
-    assert out["check"]["violations"] == []
-    assert out["enforce"]["findings"], "enforce=True must include Engine B"
-    assert out["locks"]["summary"]["checked"] == 1, "locks run by default"
+def test_check_passes_on_an_untouched_locked_body(project) -> None:
+    """The lock rule is silent when it holds — nothing to report is a pass."""
+    out = _call(project, "cdec_check")
+    assert not [v for v in out["violations"] if v["engine"] == "lock"]
 
 
-def test_lock_check_passes_on_an_untouched_body(project) -> None:
-    out = _call(project, "cdec_lock_check")
-    assert out["ok"] is True
-    assert out["summary"]["violations"] == 0
-
-
-def test_lock_check_fails_once_a_frozen_body_changes(project) -> None:
+def test_check_fails_once_a_frozen_body_changes(project) -> None:
     billing = project / "src_tree" / "billing.py"
     billing.write_text(
         billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.3"),
         encoding="utf-8",
     )
-    out = _call(project, "cdec_lock_check")
+    out = _call(project, "cdec_check")
     assert out["ok"] is False
-    assert out["violations"][0]["target"] == "Invoice.settle"
+    locks = [v for v in out["violations"] if v["engine"] == "lock"]
+    assert locks and locks[0]["qualified_name"] == "Invoice.settle"
+    assert locks[0]["waivable"] is False
 
 
 def test_lock_identity_is_ast_based_not_line_based(project) -> None:
@@ -203,24 +226,43 @@ def test_lock_identity_is_ast_based_not_line_based(project) -> None:
         "# a new comment\nCONSTANT = 1\n\n" + billing.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    assert _call(project, "cdec_lock_check")["ok"] is True
+    out = _call(project, "cdec_check")
+    assert not [v for v in out["violations"] if v["engine"] == "lock"]
 
 
-def test_lock_list_separates_tagged_from_baselined(project) -> None:
-    out = _call(project, "cdec_lock_list")
+def test_locks_separates_tagged_from_baselined(project) -> None:
+    out = _call(project, "cdec_locks")
     by_target = {row["target"]: row for row in out["targets"]}
     assert by_target["Invoice.settle"]["tagged"] is True
     assert by_target["Invoice.settle"]["baselined"] is True
     assert by_target["Ledger.record"]["tagged"] is False
+    assert out["rule_configured"] is True
+
+
+def test_check_reports_a_rule_it_could_not_run(tmp_path) -> None:
+    """A rule that silently checks nothing looks exactly like one that passed."""
+    src = tmp_path / "src_tree"
+    src.mkdir()
+    (src / "a.ts").write_text("export class Alpha {}\n", encoding="utf-8")
+    (tmp_path / ".cdec").mkdir()
+    (tmp_path / ".cdec" / "rules.yaml").write_text(
+        "language: typescript\nsource: src_tree\n\n"
+        "rules:\n  - id: frozen-implementations\n"
+        "    type: implementation-locks\n    severity: error\n",
+        encoding="utf-8",
+    )
+    out = _call(tmp_path, "cdec_check")
+    assert out["ok"] is True
+    assert out["skipped"][0]["rule_id"] == "frozen-implementations"
 
 
 # ---------------- the review loop ----------------
 
 def test_issues_keys_match_what_the_cli_reports(project) -> None:
     """The whole review loop rests on this: a key an agent reads over MCP has to
-    be the key `cdec baseline allow` accepts on the command line."""
+    be the key `cdec exceptions allow` accepts on the command line."""
     from_mcp = {i["key"] for i in _call(project, "cdec_issues")["issues"]}
-    result = _cli(["baseline", "review"], project)
+    result = _cli(["exceptions", "review"], project)
     assert from_mcp, "expected at least one open issue"
     for key in from_mcp:
         assert key in result.stdout
@@ -233,20 +275,24 @@ def test_allow_records_a_waiver_and_silences_the_issue(project) -> None:
     out = _call(project, "cdec_allow", keys=[key], reason="agreed in ARCH-42")
     assert out["ok"] is True and out["written"] is True
 
-    ledger = yaml.safe_load((project / ".cdec" / "baseline.yaml").read_text(encoding="utf-8"))
-    assert "ARCH-42" in yaml.safe_dump(ledger)
+    doc = _rules_doc(project)
+    assert any(e["reason"] == "agreed in ARCH-42" for e in doc["exceptions"])
+    assert doc["rules"], "the hand-written rules must survive the write"
 
     assert key not in {i["key"] for i in _call(project, "cdec_issues")["issues"]}
-    assert key in {w["key"] for w in _call(project, "cdec_waivers_list")["waivers"]}
+    assert key in {
+        w["key"] for w in _call(project, "cdec_exceptions_list")["exceptions"]
+    }
 
 
 def test_dry_run_reports_without_writing(project) -> None:
     key = next(
         i["key"] for i in _call(project, "cdec_issues")["issues"] if i["engine"] == "enforce"
     )
+    before = (project / ".cdec" / "rules.yaml").read_text(encoding="utf-8")
     out = _call(project, "cdec_allow", keys=[key], reason="nope", dry_run=True)
     assert out["allowed"] and out["written"] is False
-    assert not (project / ".cdec" / "baseline.yaml").exists()
+    assert (project / ".cdec" / "rules.yaml").read_text(encoding="utf-8") == before
 
 
 def test_a_stale_key_is_an_error_not_a_silent_no_op(project) -> None:
@@ -260,7 +306,7 @@ def test_removing_a_waiver_makes_the_issue_block_again(project) -> None:
         i["key"] for i in _call(project, "cdec_issues")["issues"] if i["engine"] == "enforce"
     )
     _call(project, "cdec_allow", keys=[key], reason="temporary")
-    out = _call(project, "cdec_waiver_remove", keys=[key])
+    out = _call(project, "cdec_exception_remove", keys=[key])
     assert out["ok"] is True and out["removed"] == [key]
     assert key in {i["key"] for i in _call(project, "cdec_issues")["issues"]}
 
@@ -276,15 +322,15 @@ def test_prune_drops_waivers_whose_issue_is_gone(project) -> None:
         billing.read_text(encoding="utf-8").replace("return Invoice()", "return None"),
         encoding="utf-8",
     )
-    out = _call(project, "cdec_waivers_prune")
+    out = _call(project, "cdec_exceptions_prune")
     assert [w["key"] for w in out["pruned"]] == [key]
 
 
 # ---------------- privilege boundaries ----------------
 
-def test_locks_are_not_waivable_over_mcp(project) -> None:
-    """Accepting a changed frozen implementation must stay a ledger diff, not a
-    waiver — the refusal has to survive the transport."""
+def test_locks_are_not_acceptable_over_mcp(project) -> None:
+    """Accepting a changed frozen implementation must stay a ledger diff, not an
+    exception — the refusal has to survive the transport."""
     billing = project / "src_tree" / "billing.py"
     billing.write_text(
         billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.9"),
@@ -296,58 +342,84 @@ def test_locks_are_not_waivable_over_mcp(project) -> None:
     out = _call(project, "cdec_allow", keys=[key])
     assert out["ok"] is False
     assert out["refused"] and out["refused"][0]["key"] == key
-    assert "cdec lock set" in out["refused"][0]["reason"]
-    assert "--force" in out["refused"][0]["reason"]
+    assert "--automatic-exceptions locks --force" in out["refused"][0]["reason"]
 
 
-def test_lock_set_will_not_rebaseline_drift_without_force(project) -> None:
+def test_accept_locks_will_not_rebaseline_drift_without_force(project) -> None:
     billing = project / "src_tree" / "billing.py"
-    original = (project / ".cdec" / "locks.yaml").read_text(encoding="utf-8")
+    before = _rules_doc(project)["locks"][0]["digest"]
     billing.write_text(
         billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.5"),
         encoding="utf-8",
     )
-    out = _call(project, "cdec_lock_set")
-    assert out["ok"] is False
-    assert [b["target"] for b in out["blocked"]] == ["Invoice.settle"]
+    out = _call(project, "cdec_accept", what=["locks"])
+    assert any("CHANGED" in line for line in out["recorded"]["locks"])
+    assert _rules_doc(project)["locks"][0]["digest"] == before
+    assert _call(project, "cdec_check")["ok"] is False
+
+
+def test_accept_locks_with_force_rebaselines_and_leaves_a_diff(project) -> None:
+    billing = project / "src_tree" / "billing.py"
+    before = _rules_doc(project)["locks"][0]["digest"]
+    billing.write_text(
+        billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.5"),
+        encoding="utf-8",
+    )
+    out = _call(project, "cdec_accept", what=["locks"], force=True)
+    assert any("rebased" in line for line in out["recorded"]["locks"])
+    assert _rules_doc(project)["locks"][0]["digest"] != before
+    assert not [
+        v for v in _call(project, "cdec_check")["violations"] if v["engine"] == "lock"
+    ]
+
+
+def test_accept_rules_never_grandfathers_a_lock(project) -> None:
+    billing = project / "src_tree" / "billing.py"
+    billing.write_text(
+        billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.5"),
+        encoding="utf-8",
+    )
+    out = _call(project, "cdec_accept", what=["rules"])
+    assert out["not_grandfathered"], "the lock must be reported, not swallowed"
     assert "force=True" in out["hint"]
-    assert (project / ".cdec" / "locks.yaml").read_text(encoding="utf-8") == original
-
-
-def test_lock_set_force_rebaselines_and_leaves_a_ledger_diff(project) -> None:
-    billing = project / "src_tree" / "billing.py"
-    original = (project / ".cdec" / "locks.yaml").read_text(encoding="utf-8")
-    billing.write_text(
-        billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.5"),
-        encoding="utf-8",
-    )
-    out = _call(project, "cdec_lock_set", force=True, reason="rate change approved")
-    assert out["ok"] is True and out["written"] is True
-    assert [e["target"] for e in out["rebaselined"]] == ["Invoice.settle"]
-    assert (project / ".cdec" / "locks.yaml").read_text(encoding="utf-8") != original
-    assert _call(project, "cdec_lock_check")["ok"] is True
+    assert _call(project, "cdec_check")["ok"] is False
 
 
 # ---------------- the model pipeline ----------------
 
-def test_reference_test_reports_structural_deviation(project) -> None:
-    assert _call(project, "cdec_reference_test")["ok"] is True
+def _reference_violations(project):
+    return [
+        v for v in _call(project, "cdec_check")["violations"] if v["engine"] == "reference"
+    ]
+
+
+def test_the_reference_rule_reports_structural_deviation(project) -> None:
+    assert not _reference_violations(project)
 
     (project / "src_tree" / "extra.py").write_text("class Extra:\n    pass\n", encoding="utf-8")
-    out = _call(project, "cdec_reference_test")
-    assert out["ok"] is False
-    assert out["count"] == 1
+    deviations = _reference_violations(project)
+    assert len(deviations) == 1
+    assert deviations[0]["key"].startswith("R-")
+
+
+def test_accept_reference_resnapshots_the_current_code(project) -> None:
+    (project / "src_tree" / "extra.py").write_text("class Extra:\n    pass\n", encoding="utf-8")
+    assert _reference_violations(project)
+
+    out = _call(project, "cdec_accept", what=["reference"])
+    assert out["recorded"]["reference"]
+    assert not _reference_violations(project)
 
 
 def test_reference_set_promotes_an_authored_model(project) -> None:
     _call(project, "cdec_parse", out="target.json")
     (project / "src_tree" / "extra.py").write_text("class Extra:\n    pass\n", encoding="utf-8")
-    assert _call(project, "cdec_reference_test")["ok"] is False
+    assert _reference_violations(project)
 
     out = _call(project, "cdec_reference_set", model="target.json")
     assert out["ok"] is True
     # The promoted model predates `extra.py`, so the deviation must persist.
-    assert _call(project, "cdec_reference_test")["ok"] is False
+    assert _reference_violations(project)
 
 
 def test_convert_round_trips_a_model(project) -> None:
@@ -364,7 +436,7 @@ def test_convert_round_trips_a_model(project) -> None:
 def test_a_missing_project_is_a_clean_tool_error(tmp_path) -> None:
     from mcp.server.mcpserver.exceptions import ToolError
 
-    with pytest.raises(ToolError, match="config.yaml"):
+    with pytest.raises(ToolError, match="rules.yaml"):
         _call(tmp_path, "cdec_check")
 
 
@@ -372,7 +444,7 @@ def test_a_bad_source_path_is_a_clean_tool_error(project) -> None:
     from mcp.server.mcpserver.exceptions import ToolError
 
     with pytest.raises(ToolError, match="not a directory"):
-        _call(project, "cdec_enforce", source="does_not_exist")
+        _call(project, "cdec_locks", source="does_not_exist")
 
 
 def test_propose_refuses_rather_than_blocking_when_no_viewer_runs(project) -> None:

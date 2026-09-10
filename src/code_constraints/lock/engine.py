@@ -1,4 +1,9 @@
-"""Orchestration for `cdec lock` — the implementation-freeze engine (Engine C).
+"""The implementation-freeze engine (Engine C).
+
+Reached through the `implementation-locks` rule type in `.cdec/rules.yaml`, so
+freezing a body is configured, reported and gated by the same `cdec check` as
+every other law. The engine itself stays an independent package with its own
+result types; the rule is a thin adapter.
 
 Two operations, both driven off the same collected fingerprints:
 
@@ -8,8 +13,9 @@ Two operations, both driven off the same collected fingerprints:
 Locks are declared two ways, and both are honoured:
 
   * a `@locked` / `[Locked]` tag on the element — the primary, in-code route;
-  * `lock.targets:` globs in `.cdec/config.yaml` — for freezing code that isn't
-    practical to decorate, e.g. an entire test package.
+  * `targets:` globs on the `implementation-locks` rule in `.cdec/rules.yaml` —
+    for freezing code that isn't practical to decorate, e.g. a whole test
+    package.
 
 The engine never consults the diff, the reference XMI, or the baseline: a lock
 is an absolute statement about the current source, not a drift signal.
@@ -86,7 +92,8 @@ def collect_targets(
         from code_constraints.julia.fingerprint import collect_lockables
     else:
         raise UnsupportedLockLanguage(
-            f"`cdec lock` supports python, csharp, odin, lua and julia; got {lang!r}. "
+            f"implementation locks support python, csharp, odin, lua and julia; "
+            f"got {lang!r}. "
             f"Implementation freezing needs an AST fingerprinter for the language."
         )
     return collect_lockables(root, include_docstrings=opts.include_docstrings)
@@ -142,7 +149,7 @@ def check_locks(
                         f"'{name}' is locked in the ledger but no longer exists in the "
                         f"source. Deleting or renaming a frozen element is a change: "
                         f"restore it, or have a lead drop the lock with "
-                        f"`cdec lock remove --target {name}`."
+                        f"`cdec check --automatic-exceptions locks --force`."
                         + (f"\nLock reason: {entry.reason}" if entry.reason else "")
                     ),
                     reason=entry.reason,
@@ -164,7 +171,8 @@ def check_locks(
                         f"'{name}' was baselined with digest algorithm "
                         f"'{entry.algo}' but this code-constraints computes "
                         f"'{target.algo}'. The digests are not comparable — "
-                        f"re-baseline with `cdec lock set --force` after "
+                        f"re-baseline with "
+                        f"`cdec check --automatic-exceptions locks --force` after "
                         f"confirming the implementation is unchanged."
                     ),
                 )
@@ -198,7 +206,7 @@ def check_locks(
                         f"'{name}' is recorded in the lock ledger but its @{LOCK_RULE} "
                         f"tag is gone. Removing the tag does not remove the lock — "
                         f"restore it, or have a lead run "
-                        f"`cdec lock remove --target {name}`."
+                        f"`cdec check --automatic-exceptions locks --force`."
                     ),
                     reason=entry.reason,
                     owner=entry.locked_by,
@@ -222,7 +230,7 @@ def check_locks(
                 message=(
                     f"'{target.target}' is tagged @{LOCK_RULE} but has no baseline "
                     f"digest, so nothing is being verified. Record it with "
-                    f"`cdec lock set`."
+                    f"`cdec check --automatic-exceptions locks`."
                 ),
                 reason=target.reason,
                 owner=target.owner,
@@ -254,9 +262,10 @@ def update_locks(
 
     Adding a lock is cheap; *re-baselining a drifted one is the privileged
     operation*, so an existing entry whose digest moved is only rewritten with
-    `force=True`. That keeps `cdec lock set` safe to run by anyone — without
-    `--force` it can never erase evidence of a change — while the `--force` run
-    shows up as a reviewable diff on `.cdec/locks.yaml`.
+    `force=True`. That keeps `cdec check --automatic-exceptions locks` safe to
+    run by anyone — without `--force` it can never erase evidence of a change —
+    while the `--force` run shows up as a reviewable diff on the `locks:`
+    section of `.cdec/rules.yaml`.
 
     `only` restricts the operation to matching targets (globs). `prune` drops
     ledger entries whose element no longer exists or is no longer locked.
@@ -300,7 +309,7 @@ def update_locks(
                     message=(
                         f"'{target.target}' has drifted from its baseline. Re-baselining "
                         f"a frozen implementation requires --force (and a lead's "
-                        f"approval on the `.cdec/locks.yaml` diff)."
+                        f"approval on the `locks:` diff in .cdec/rules.yaml)."
                     ),
                     reason=existing.reason,
                     owner=existing.locked_by,
@@ -314,9 +323,9 @@ def update_locks(
         if target is not None and is_locked_target(target, opts.patterns):
             continue
         # The element is gone or its tag was deleted. Dropping the ledger entry
-        # is privileged: an unforced run leaves it in place so `cdec lock check`
-        # keeps reporting it, rather than letting anyone unlock by deleting a
-        # decorator and re-running `cdec lock set`.
+        # is privileged: an unforced run leaves it in place so `cdec check` keeps
+        # reporting it, rather than letting anyone unlock by deleting a decorator
+        # and re-running the baselining command.
         if prune and force:
             del out[name]
             result.removed.append(entry)
@@ -361,7 +370,7 @@ def _changed_message(name: str, entry: LockEntry, target: LockTarget) -> str:
         lines.append(f"Locked by: {entry.locked_by}" + (f" on {entry.locked_at}" if entry.locked_at else ""))
     lines.append(
         "Revert the change, or ask a lead to approve a re-baseline with "
-        f"`cdec lock set --target {name} --force`."
+        "`cdec check --automatic-exceptions locks --force`."
     )
     return "\n".join(lines)
 

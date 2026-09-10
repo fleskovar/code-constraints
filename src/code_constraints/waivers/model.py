@@ -1,9 +1,9 @@
 """One engine-neutral view of a reported issue.
 
-The three engines have three deliberately separate result types (`Violation`,
-`Finding`, `LockViolation`). The review workflow needs to talk about all of them
-in one file and one command, so this is the narrow projection they share — just
-enough to print a line, identify it by key, and turn it into a waiver.
+The engines have deliberately separate result types (`Violation`, `Finding`,
+`LockViolation`, `Deviation`). The review workflow needs to talk about all of
+them in one list, so this is the narrow projection they share — just enough to
+print a line, identify it by key, and turn it into an exception.
 
 Adapting happens at the boundary (`collect.py`); the engines never learn about
 this type, so they stay decoupled.
@@ -25,25 +25,34 @@ class NotWaivable(ValueError):
 class Issue:
     """A single reported issue, from any engine."""
 
-    engine: str  # "check" | "enforce" | "lock"
-    rule: str  # rule id / catalog rule / lock violation kind
+    engine: str  # "check" | "enforce" | "lock" | "reference"
+    rule: str  # the engine's own rule identity — what the key is derived from
     qualified_name: str  # class qname, or lock target
     detail: str = ""  # discriminator; see code_constraints.core.keys
     message: str = ""
     severity: str = "error"
     file: str = ""
     line: int = 0
-    # True when a waiver already covers this issue (it was silenced this run).
+    # The `rules.yaml` entry that surfaced this issue. Shown to the reader so a
+    # report points at the line of config to edit; never part of the key, so
+    # renaming an entry doesn't invalidate an exception granted against it.
+    rule_id: str = ""
+    # False for issues that must not be accepted as exceptions — locks.
+    waivable: bool = True
+    # True when an exception already covers this issue (it was silenced).
     waived: bool = False
     waiver_reason: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.rule_id:
+            self.rule_id = self.rule
+        # The engine is the authority on waivability; a caller can only narrow.
+        if self.engine not in WAIVABLE_ENGINES:
+            self.waivable = False
 
     @property
     def key(self) -> str:
         return make_key(self.engine, self.rule, self.qualified_name, self.detail)
-
-    @property
-    def waivable(self) -> bool:
-        return self.engine in WAIVABLE_ENGINES
 
     @property
     def location(self) -> str:
@@ -66,16 +75,16 @@ class Issue:
 
 
 def _not_waivable_message(issue: Issue) -> str:
-    """Locks are the only non-waivable engine, and the message has to say what
+    """Locks are the only non-exceptable engine, and the message has to say what
     to do instead — a dead end here is a dead end for the whole workflow."""
     if issue.engine == "lock":
         return (
             f"{issue.key} is a lock violation on '{issue.qualified_name}', and locks "
-            f"are not waivable through the baseline. A frozen implementation may "
-            f"only change with a lead's approval, which leaves a reviewable diff on "
-            f".cdec/locks.yaml:\n"
-            f"    cdec lock set --target {issue.qualified_name} --force --reason \"why\"\n"
-            f"To drop the lock entirely:\n"
-            f"    cdec lock remove --target {issue.qualified_name}"
+            f"cannot be accepted as exceptions. A frozen implementation may only "
+            f"change with a lead's approval, which leaves a reviewable diff on the "
+            f"`locks:` section of .cdec/rules.yaml:\n"
+            f"    cdec check --automatic-exceptions locks --force\n"
+            f"To drop the lock entirely, delete its @locked tag from the source and "
+            f"re-run that command."
         )
-    return f"{issue.key}: issues from engine {issue.engine!r} cannot be waived."
+    return f"{issue.key}: issues from engine {issue.engine!r} cannot be accepted."

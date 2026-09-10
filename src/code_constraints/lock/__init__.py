@@ -1,8 +1,12 @@
-"""`cdec lock` — the implementation-freeze engine (Engine C).
+"""The implementation-freeze engine (Engine C).
 
 Freezes the *body* of a class or function so it cannot change without an
 explicit, reviewable re-baseline. Identity is AST-derived, not line-based, so
 code added above a locked element never trips it.
+
+Driven by the `implementation-locks` rule type in `.cdec/rules.yaml`, which is
+what `cdec check` runs. This package stays independent of the other engines:
+the rule is a thin adapter over the entry points below.
 
 Public surface:
 

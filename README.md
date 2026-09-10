@@ -5,17 +5,47 @@ implementation decisions as machine-checkable constraints, then enforces them in
 the day-to-day development loop — so junior developers, external contributors, and coding
 agents work inside the boundaries the team agreed on instead of around them.
 
-Constraints are enforced by **three decoupled engines**, each answering a different question:
+**One file, one command.** Everything a project commits lives in `.cdec/rules.yaml`, and
+`cdec check` is the whole gate. Four kinds of rule run inside it, answering four different
+questions:
 
-| Engine | Command | Question it answers |
+| Rule kind | `type:` | Question it answers |
 | --- | --- | --- |
-| **A — drift** | `cdec check` | Did the *architecture* change? (new/removed classes, forbidden dependencies, cycles, layer violations, weakened rule tags) |
-| **B — conformance** | `cdec enforce` | Does the *implementation* obey its tags? (`@no_instantiation`, `@factory`, `@immutable`, `@sealed`) |
-| **C — freeze** | `cdec lock` | Did this body change **at all**? (AST-identity digests — reformatting and moving code never trip a lock; any semantic edit does) |
+| **Model rules** | `no-new-classes`, `forbidden-references`, `layer-dependencies`, … | Did the *architecture* change? (new/removed classes, forbidden dependencies, cycles, layer violations, weakened tags) |
+| **Conformance** | `tag-conformance` | Does the *implementation* obey its tags? (`@no_instantiation`, `@factory`, `@immutable`, `@sealed`) |
+| **Freeze** | `implementation-locks` | Did this body change **at all**? (AST-identity digests — reformatting and moving code never trip a lock; any semantic edit does) |
+| **Reference gate** | `reference-architecture` | Has *anything* structural changed against the committed snapshot? |
 
-All three exit non-zero on violation, so they drop straight into a CI/CD pipeline or a
-pre-commit hook. `cdec check` runs Engine C automatically and can run Engine B with
-`--enforce`, so one command gates everything.
+Each one is opt-in, and they share a rule catalogue but no logic. `cdec check` exits
+non-zero on violation, so it drops straight into a CI/CD pipeline or a pre-commit hook:
+
+```yaml
+# .cdec/rules.yaml — the whole contract
+language: python
+source: src
+
+rules:
+  - id: domain-is-a-leaf-package
+    type: forbidden-package-references
+    severity: error
+    from: ["myapp.domain.**"]
+    to:   ["myapp.ui.**"]
+    message: |
+      Layering violation: '{source}' must not depend on '{target}'.
+      Move the reference to whichever package owns the workflow.
+
+  - id: tags-must-be-honoured
+    type: tag-conformance
+    severity: error
+
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+```
+
+```bash
+cdec check
+```
 
 Underneath the constraint layer sits a full **UML modelling pipeline** — it is how the tool
 knows what your architecture *is*. `cdec` parses **Python, C#, Odin, Lua, Julia, TypeScript, and Svelte 5**
@@ -57,7 +87,7 @@ From a clone, the `Makefile` is the shortest path — it creates the venv, insta
 ```bash
 make setup      # venv + editable install + frontend build
 make test       # full test suite
-make demo       # run all three engines against the bundled examples
+make demo       # run `cdec check` against the bundled examples
 make serve      # http://127.0.0.1:8765
 make help       # every target
 ```
@@ -93,7 +123,7 @@ for humans and AI agents to author than XMI.
 
 | Document | What it is |
 | --- | --- |
-| **[Tutorial](docs/TUTORIAL.md)** | **Start here.** A guided path from parsing your first codebase to a fully gated CI pipeline — every example runnable against the bundled demos. Covers all four engines, the design loop, CI recipes, and per-language specifics. |
+| **[Tutorial](docs/TUTORIAL.md)** | **Start here.** A guided path from parsing your first codebase to a fully gated CI pipeline — every example runnable against the bundled demos. Covers every rule type, the design loop, CI recipes, and per-language specifics. |
 | **[Rules & constraints catalogue](docs/RULES_CATALOGUE.md)** | Every constraint the tool can enforce, in one place — each `rules.yaml` rule type and each source tag with its options, a sample configuration, and a passing *and* failing example. The reference for developers and architects deciding what to encode. |
 | [CLI reference](docs/CLI_REFERENCE.md) | Exhaustive reference: every command and option, the `.cdec/` config files, exit codes, and CI/CD recipes. |
 | [MCP server](docs/MCP.md) | Run code-constraints as a stdio MCP server so a coding agent calls the engines as tools. Install, per-harness configuration, and the tool surface. |
@@ -126,7 +156,7 @@ cdec propose target.json --focus billing.Invoice,billing.PaymentGateway
 cdec reference set target.json                      # writes .cdec/reference.xmi
 
 # 5. Constrain development against it
-cdec reference test        # CI gate: exit 1 on structural deviation
+cdec check        # CI gate: exit 1 on structural deviation
 cdec check                 # architectural drift rules vs the same reference
 ```
 
@@ -154,8 +184,8 @@ pip install "code-constraints[mcp]"
 ```
 
 Drop that in `.mcp.json` at your repo root (or the equivalent file for your harness — see
-the [MCP guide](docs/MCP.md)). The agent gets `cdec_check` / `cdec_enforce` /
-`cdec_lock_check` for the three engines, `cdec_issues` + `cdec_allow` for the review loop,
+the [MCP guide](docs/MCP.md)). The agent gets `cdec_check` / `cdec_check` /
+`cdec_check` for the gate, `cdec_issues` + `cdec_allow` for the review loop,
 and `cdec_propose` + `cdec_reference_set` for the design loop. Issue keys are identical to
 the ones the CLI prints, so the two interfaces are interchangeable mid-workflow.
 
@@ -171,16 +201,16 @@ cdec check --log-out check.log
 #     - [V-DD3EA5B2] animals.Cat — animals/cat.py:1: New class 'animals.Cat' was added.
 
 #  …mark the lines you accept — add [ALLOW: agreed in ARCH-42] anywhere on them…
-cdec baseline patch --file check.log     # → .cdec/baseline.yaml, with the reason attached
+cdec exceptions patch --file check.log     # → .cdec/rules.yaml, with the reason attached
 
 # or, when you already know which one you mean:
-cdec baseline allow V-DD3EA5B2 --reason "agreed in ARCH-42"
+cdec exceptions allow V-DD3EA5B2 --reason "agreed in ARCH-42"
 ```
 
 Keys are hashes of *what* an issue is — engine, rule, element, discriminator — never of
 where it sits, so a waiver survives reformatting and moved code, and the same code always
 produces the same key. That last property is what makes the loop scriptable: an agent can
-run `cdec check --format json`, decide, and call `cdec baseline allow <key>` with no prose
+run `cdec check --format json`, decide, and call `cdec exceptions allow <key>` with no prose
 parsing in between.
 
 See [Accepting known violations](docs/CLI_REFERENCE.md#24-accepting-known-violations-cdec-baseline)
@@ -258,8 +288,8 @@ cdec propose target.json [--source SRC] [--lang LANG] [--against {source|referen
 Manage the locked target architecture (`.cdec/reference.xmi`).
 ```bash
 cdec reference set target.json     # lock an authored model (.json or .xmi) as the reference
-cdec reference update [SOURCE]     # re-snapshot the reference from the current code
-cdec reference test [SOURCE]       # CI gate: exit 1 if code deviates structurally
+cdec check --automatic-exceptions reference [SOURCE]     # re-snapshot the reference from the current code
+cdec check [SOURCE]       # CI gate: exit 1 if code deviates structurally
 cdec reference show [SOURCE]       # open the viewer on a code-vs-reference diff
 ```
 
@@ -294,7 +324,7 @@ cdec init [--config .cdec] [--lang python] [--source .] [--force]
 ```
 
 ### `cdec update-assets`
-Update the Claude agents and language shims to the version bundled with the currently-installed code-constraints. Run after upgrading to pick up new agents or shim changes in an existing project. Language is auto-detected from `.cdec/config.yaml` when `--lang` is omitted.
+Update the Claude agents and language shims to the version bundled with the currently-installed code-constraints. Run after upgrading to pick up new agents or shim changes in an existing project. Language is auto-detected from `.cdec/rules.yaml` when `--lang` is omitted.
 ```bash
 cdec update-assets [--project-root .] [--lang LANG] [--no-agents] [--no-shims]
 ```
@@ -305,54 +335,46 @@ Update the installation in place — equivalent to re-running the standalone ins
 cdec update [--branch BRANCH] [--no-frontend]
 ```
 
-### `cdec check`  — Engine A (architectural drift)
-Run architectural-lint rules over the model. Operates on the `Project` model + baseline only; **never inspects method bodies**. Exits non-zero on any violation at or above `--fail-on` severity (default `error`).
+### `cdec check`  — the gate
+Run every rule in `.cdec/rules.yaml`. Exits non-zero on any violation at or above
+`--fail-on` severity (default `error`). This is the only enforcement command; the rule
+types in that file decide what it actually does.
 ```bash
-cdec check [--config .cdec] [--source SRC]
-          [--reference ref.xmi | --base-ref GIT_REF] [--repo .]
-          [--format {human|json}] [--json-out report.json] [--log-out check.log]
-          [--fail-on {error|warning|none}]
-          [--update-reference]   # re-snapshot reference.xmi and exit
-          [--update-baseline]    # accept current violations into baseline.yaml and exit
-          [--enforce]            # also run Engine B (cdec enforce) in the same run
-          [--no-locks]           # skip Engine C (implementation locks)
-          [--bypass-locks --bypass-reason "..."]   # report lock violations without failing
-```
-Engine C runs automatically whenever the project has locks (see `cdec lock`), so a frozen implementation is enforced by the command CI already runs.
-
-### `cdec enforce`  — Engine B (implementation conformance)
-Re-parse the source and inspect method bodies / structure for conformance to rule tags (`no-instantiation`, `factory`, `immutable`, `sealed`). Fully decoupled from `cdec check` — never consults the reference model or a diff. Findings accepted via `cdec baseline` are silenced (`--no-baseline` shows them all). Exits non-zero if any conformance violation remains.
-```bash
-cdec enforce PATH --lang LANG [--format {human|json}] [--json-out findings.json]
-             [--config .cdec]  # silence findings accepted via `cdec baseline`
-             [--no-baseline]   # …or report every finding regardless
+cdec check [--config .cdec] [--source SRC] [--lang LANG]
+           [--reference model.xmi | --base-ref GIT_REF] [--repo .]
+           [--format {human|json}] [--json-out report.json] [--log-out check.log]
+           [--fail-on {error|warning|none}]
+           [--automatic-exceptions {rules|locks|reference|all}]  # accept the current state
+           [--force]                                 # with `locks`: accept a CHANGED body
+           [--bypass-locks --bypass-reason "..."]    # report lock violations without failing
 ```
 
-### `cdec baseline`  — accept known violations (the review loop)
-Every issue the engines report carries a stable key (`V-` check, `F-` enforce, `L-` lock). Quote the key to accept an issue as known-and-allowed, with a reason, recorded in `.cdec/baseline.yaml`. Keys are derived from *what* the issue is, not where — so a waiver survives reformatting and moved code.
+`--automatic-exceptions` is how you accept the code as it stands rather than failing on it:
+
+| Value | Effect |
+| --- | --- |
+| `rules` | Grandfather every current violation into `exceptions:` — the adoption move on an existing codebase. Only **new** violations fail afterwards. |
+| `locks` | Record digests for newly `@locked` code. Safe for anyone: without `--force` it only *adds*. |
+| `reference` | Re-snapshot `.cdec/reference.xmi` from the current source. |
+| `all` | All three. |
+
 ```bash
-cdec baseline review --out review.txt   # one markable line per issue
+cdec locks [SRC] [--all] [--json]    # read-only: what is lockable / locked, and its state
+```
+
+### `cdec exceptions`  — accept known violations (the review loop)
+Every issue the engines report carries a stable key (`V-` check, `F-` enforce, `L-` lock). Quote the key to accept an issue as known-and-allowed, with a reason, recorded in the `exceptions:` section of `.cdec/rules.yaml`. Keys are derived from *what* the issue is, not where — so a waiver survives reformatting and moved code.
+```bash
+cdec exceptions review --out review.txt   # one markable line per issue
 #  …add [ALLOW] (or [ALLOW: reason]) to the lines you accept…
-cdec baseline patch --file review.txt   # apply exactly those; `--file -` reads stdin
+cdec exceptions patch --file review.txt   # apply exactly those; `--file -` reads stdin
 
-cdec baseline allow V-DD3EA5B2 --reason "agreed in ARCH-42"   # or name keys directly
-cdec baseline remove V-DD3EA5B2         # withdraw: the issue blocks again
-cdec baseline list                      # what's accepted, and why
-cdec baseline prune                     # drop waivers whose issue is gone
+cdec exceptions allow V-DD3EA5B2 --reason "agreed in ARCH-42"   # or name keys directly
+cdec exceptions remove V-DD3EA5B2         # withdraw: the issue blocks again
+cdec exceptions list                      # what's accepted, and why
+cdec exceptions prune                     # drop waivers whose issue is gone
 ```
-`cdec check --log-out check.log` output is directly patchable — the parser just needs a marker and a key on the same line. Lock violations (`L-`) are **not** waivable this way: a frozen implementation is re-baselined with `cdec lock set --force`, which leaves its own reviewable diff.
-
-### `cdec lock`  — Engine C (implementation freeze)
-Freeze a class or function so its implementation cannot change. See [Implementation locks](#implementation-locks) below.
-```bash
-cdec lock list [SRC] [--all] [--json]          # what is lockable / locked, and its state
-cdec lock check [SRC] [--format {human|json}] [--json-out locks.json]
-               [--bypass --bypass-reason "..."]
-cdec lock set [SRC] [--target GLOB]...          # baseline newly @locked elements
-             [--force]                         # re-baseline DRIFTED ones (privileged)
-             [--reason "..."] [--owner NAME] [--dry-run]
-cdec lock remove --target GLOB...               # release locks from the ledger
-```
+`cdec check --log-out check.log` output is directly patchable — the parser just needs a marker and a key on the same line. Lock violations (`L-`) are **not** waivable this way: a frozen implementation is re-baselined with `cdec check --automatic-exceptions locks --force`, which leaves its own reviewable diff.
 
 ### `cdec serve`
 Run the local web viewer (FastAPI + Svelte SPA). Default port is **8765**.
@@ -409,19 +431,18 @@ Lua writes the comment as `---@cdec …` and Odin as `//@cdec …`. ⚠️ Julia
 
 The tags are captured on the model, round-trip through XMI, render as badges in the web class diagram, and participate in the diff. **Enforcement is split into three completely decoupled engines** sharing only the rule catalog:
 
-- **Engine A — `cdec check` (drift / architectural).** Model + baseline only, never reads bodies. The `frozen-rules` rule fails when a baseline tag is removed or weakened; `layer-dependencies` flags forbidden cross-layer references from `@layer` tags.
-- **Engine B — `cdec enforce` (implementation conformance).** Re-parses source ASTs and inspects method bodies. Detection is precise in C# and Odin (grammar node kinds), heuristic in Python (`allow` is the escape hatch), name-based in Julia, and idiom-based in Lua.
-- **Engine C — `cdec lock` (implementation freeze).** Digests the normalised AST of a `@locked` element and fails if it changes at all.
+- **Model rules (drift / architectural).** Model + baseline only, never read bodies. `frozen-rules` fails when a baseline tag is removed or weakened; `layer-dependencies` flags forbidden cross-layer references from `@layer` tags.
+- **`tag-conformance` (implementation conformance).** Re-parses source ASTs and inspects method bodies. Detection is precise in C# and Odin (grammar node kinds), heuristic in Python (`allow` is the escape hatch), name-based in Julia, and idiom-based in Lua.
+- **`implementation-locks` (implementation freeze).** Digests the normalised AST of a `@locked` element and fails if it changes at all.
+
+The three are separate engines internally and share only the rule catalogue — the rule
+types are thin adapters, so `cdec check` gives one report without coupling them.
 
 ```bash
-# Engine A: passes on the demo (architecture is intact)
+# One command runs every rule the demo configures. Its model rules pass — the
+# architecture is intact — and its `tag-conformance` rule flags the one seeded
+# body violation, so this exits 1 on purpose.
 cdec check --config examples/python_demo/.cdec --source examples/python_demo
-
-# Engine B: flags the one seeded body violation in the demo
-cdec enforce examples/python_demo --lang python
-
-# Run both in one invocation (they share no logic):
-cdec check --config examples/python_demo/.cdec --source examples/python_demo --enforce
 ```
 
 See [`examples/`](examples/) for small bookstore codebases (Python, C#, Odin, Lua, Julia, TypeScript, Svelte); the Python, C#, Odin, Lua and Julia demos each carry a fully-worked tagged `billing` slice with one intentional violation.
@@ -451,44 +472,55 @@ using CodeConstraints.Rules;
 public decimal Settle(decimal amount) { ... }
 ```
 
-**2. Baseline it.** `cdec lock set` records the digest in `.cdec/locks.yaml` — commit that file.
+**2. Turn the rule on** in `.cdec/rules.yaml`:
 
-**3. It is now enforced by `cdec check`**, so no new CI step is needed:
+```yaml
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+```
+
+**3. Baseline it.** `cdec check --automatic-exceptions locks` records the digest in the
+`locks:` section of the same file — commit it.
+
+**4. It is now enforced by `cdec check`**, so there is no new CI step:
 
 ```
-cdec lock: 1 lock violation(s):
-[changed] frozen implementation changed
-  - Invoice.settle — billing.py:6
-      'Invoice.settle' is a frozen method and its implementation changed.
+[frozen-implementations] (error)
+  NOT EXCEPTABLE: a frozen implementation changes only via
+  `cdec check --automatic-exceptions locks --force`.
+  - [L-3D246C33] Invoice.settle — billing.py:6: 'Invoice.settle' is a frozen
+      method and its implementation changed.
       Lock reason: settlement order agreed with finance
       Locked by: alice on 2026-08-02T10:15:00+00:00
       Revert the change, or ask a lead to approve a re-baseline with
-      `cdec lock set --target Invoice.settle --force`.
+      `cdec check --automatic-exceptions locks --force`.
 ```
 
 Five things fail the check, covering every way a freeze can be undone: the body **changed**, the element was **removed**, the `@locked` tag was deleted (**unlocked**), a tag was never baselined (**missing**), and the digest algorithm changed (**algo-mismatch**, reported separately so an upgrade never looks like tampering).
 
 ### Locking without decorating
 
-To freeze code you can't practically tag — a whole test package, say — use qualified-name globs in `.cdec/config.yaml`:
+To freeze code you can't practically tag — a whole test package, say — give the rule qualified-name globs:
 
 ```yaml
-lock:
-  enabled: true                # run lock verification as part of `cdec check`
-  include_docstrings: false    # count docstrings / /// comments as implementation
-  targets:
-    - "tests.**"               # every class and function under tests/ is frozen
+  - id: frozen-implementations
+    type: implementation-locks
+    severity: error
+    include_docstrings: false    # count docstrings / /// comments as implementation
+    targets:
+      - "tests.**"               # every class and function under tests/ is frozen
 ```
 
 ### Keeping re-baselining a lead-only action
 
-`cdec lock set` is safe for anyone to run: it **adds** locks for newly tagged elements but will never overwrite the digest of an implementation that has drifted, and never drops an entry whose tag was deleted. Accepting a change requires `--force`:
+`cdec check --automatic-exceptions locks` is safe for anyone to run: it **adds** locks for newly tagged elements but will never overwrite the digest of an implementation that has drifted, and never drops an entry whose tag was deleted. Accepting a change requires `--force`:
 
 ```bash
-cdec lock set --target myapp.Invoice.settle --force --reason "rate change approved in RFC-12"
+cdec check --automatic-exceptions locks --force
 ```
 
-That is the only path that rewrites `.cdec/locks.yaml`, so putting the file behind a CODEOWNERS entry makes approving a change to frozen code a reviewable, lead-gated event.
+That is the only path that rewrites the `locks:` section of `.cdec/rules.yaml`, so putting the file behind a CODEOWNERS entry makes approving a change to frozen code a reviewable, lead-gated event. `cdec exceptions allow` refuses an `L-` key for the same reason, and `--automatic-exceptions rules` will not grandfather one either.
 
 To ship without re-baselining, bypass explicitly:
 

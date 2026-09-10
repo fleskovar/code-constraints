@@ -31,6 +31,5 @@ Thumbs.db
 # Claude Code: local session state is private, but the agents/skills shipped
 # with the package (see pyproject force-include) are part of the distribution.
 .claude/*
-!.claude/agents/
-!.claude/skills/
-!.claude/launch.json
+.hcm
+CLAUDE.md

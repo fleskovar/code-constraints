@@ -1,3 +1,8 @@
+# Project settings (migrated from config.yaml).
+language: python
+source: .
+reference: .cdec/reference.xmi
+
 # Demo rule set — exercises every supported rule type against the
 # python_demo fixture. Each rule carries an explanatory `message:` that
 # tells the developer WHY the rule exists and HOW to fix the violation.
@@ -15,7 +20,7 @@ rules:
       New class '{qualified_name}' was introduced.
       The python_demo fixture is meant to stay small; new classes inflate
       the test surface. If this addition is intentional, run
-      `cdec check --update-reference` to bump the baseline snapshot.
+      `cdec check --automatic-exceptions reference` to bump the baseline snapshot.
 
   # Diff-scope: classes deleted on a PR are flagged.
   - id: no-removed-classes
@@ -25,7 +30,7 @@ rules:
     message: |
       Class '{qualified_name}' was removed from the parsed source tree.
       Other fixtures, tests, or examples may still reference it. If the
-      removal is deliberate, confirm with `cdec check --update-reference`.
+      removal is deliberate, confirm with `cdec check --automatic-exceptions reference`.
 
   # Snapshot: a class with no incoming references is suspicious.
   - id: no-dangling-classes

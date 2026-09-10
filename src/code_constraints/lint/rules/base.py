@@ -5,10 +5,20 @@ from __future__ import annotations
 import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Iterable
 
 from code_constraints.core.keys import make_key
 from code_constraints.core.model import Class, DiffStatus, Project, SourceLocation
+
+
+class RuleSkipped(RuntimeError):
+    """Raised by a rule that cannot run at all in this project.
+
+    Recorded in `Report.skipped` rather than swallowed: a rule that quietly
+    checks nothing looks exactly like a rule that passed, and that is how a
+    guardrail stops guarding without anybody noticing.
+    """
 
 
 class Severity(str, Enum):
@@ -24,17 +34,34 @@ class Violation:
     qualified_name: str
     message: str
     location: SourceLocation | None = None
-    # `signature` is used by the baseline fingerprint so that frozen-members
+    # `signature` is used by the exception fingerprint so that frozen-members
     # violations on the same class can be distinguished by member.
     signature: str | None = None
+    # --- key identity -------------------------------------------------------
+    # A key names the *issue*, not the config entry that surfaced it. Rules that
+    # adapt one of the decoupled engines (tag conformance, locks, the reference
+    # gate) therefore key their violations under that engine's own identity, so
+    # renaming a `rules.yaml` entry never invalidates a granted exception and a
+    # key recorded before the CLI was unified still resolves. Native rules leave
+    # these unset and key as `check`/`rule_id`, exactly as they always have.
+    key_engine: str = "check"
+    key_rule: str | None = None
+    # False for issues that must not be accepted as exceptions — locks, whose
+    # escape hatch is a privileged re-baseline instead.
+    waivable: bool = True
 
     def fingerprint(self) -> tuple[str, str, str]:
         return (self.rule_id, self.qualified_name, self.signature or "")
 
     def key(self) -> str:
-        """Stable review key (`V-…`). Derived from the fingerprint, so it never
-        moves when the file does — see `code_constraints.core.keys`."""
-        return make_key("check", self.rule_id, self.qualified_name, self.signature or "")
+        """Stable review key. Derived from the issue identity, so it never moves
+        when the file does — see `code_constraints.core.keys`."""
+        return make_key(
+            self.key_engine,
+            self.key_rule or self.rule_id,
+            self.qualified_name,
+            self.signature or "",
+        )
 
 
 @dataclass
@@ -46,6 +73,16 @@ class RuleContext:
     """
     project: Project
     has_diff: bool
+    # --- source-level context ----------------------------------------------
+    # Most rules read only the model. The rules that adapt an engine which
+    # re-parses bodies (tag conformance, locks) or loads another model (the
+    # reference gate) need to know where the code and the config live. The
+    # engines themselves stay independent packages: these rules are adapters
+    # that import them lazily and translate their results into `Violation`s.
+    source: Path | None = None
+    language: str = ""
+    config_dir: Path | None = None
+    reference_path: Path | None = None
     # Cached: qualified_name -> set of qualified names that reference it
     # (attribute type or base class).
     incoming_refs: dict[str, set[str]] = field(default_factory=dict)
@@ -82,6 +119,12 @@ class Rule:
     """Subclasses are instantiated once per `rules.yaml` entry."""
 
     type_name: str = ""  # set by @register
+    #: Scope used when the entry doesn't say. Rules that compare against a
+    #: baseline override this to "diff".
+    default_scope: str = "snapshot"
+    #: True when the rule can record the current state as the new approved
+    #: baseline via `accept_current_state` (locks, the reference gate).
+    supports_auto_accept: bool = False
 
     def __init__(
         self,
@@ -127,9 +170,20 @@ class Rule:
             signature=signature,
         )
 
-    # ---- override hook ----
+    # ---- override hooks ----
     def check(self, ctx: RuleContext) -> Iterable[Violation]:
         raise NotImplementedError
+
+    def accept_current_state(self, ctx: RuleContext, *, force: bool = False) -> list[str]:
+        """Record the code as it stands now as this rule's approved baseline.
+
+        Called by `cdec check --automatic-exceptions`. Rules whose issues are
+        grandfathered through the `exceptions:` list don't implement this — it
+        exists for the two rules that carry a baseline of their own: the lock
+        ledger and the reference snapshot. Returns lines describing what
+        changed, for the command to print.
+        """
+        return []
 
 
 def changed_classes(ctx: RuleContext, only_status: DiffStatus | None = None) -> Iterable[Class]:

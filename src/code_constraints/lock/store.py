@@ -1,13 +1,13 @@
-"""Load and save `.cdec/locks.yaml` — the approved-digest ledger.
+"""The approved-digest ledger — the `locks:` section of `.cdec/rules.yaml`.
 
-This file is the audit trail for frozen implementations. It is meant to be
-committed and to sit behind a CODEOWNERS entry so only leads can approve a
-re-baseline; `cdec lock set` refuses to overwrite a drifted digest without
-`--force` precisely so the diff on this file is the review artefact.
+The audit trail for frozen implementations. It is meant to be committed and to
+sit behind a CODEOWNERS entry so only leads can approve a re-baseline;
+`cdec check --automatic-exceptions locks` refuses to overwrite a drifted digest
+without `--force` precisely so the diff on this file is the review artefact.
 
-Shape:
+Shape (in the tool-managed tail of `rules.yaml`, see
+`code_constraints.core.rulesdoc`):
 
-    version: 1
     locks:
       - target: orders.Receipt.formatted
         kind: method
@@ -17,6 +17,10 @@ Shape:
         locked_at: "2026-08-02T10:15:00Z"
         locked_by: alice
         reason: agreed receipt formatting
+
+A standalone `.cdec/locks.yaml` was the old home. It is still read when present
+(so an existing project keeps working on upgrade) and folded into `rules.yaml`
+by `cdec init --migrate`.
 """
 
 from __future__ import annotations
@@ -25,11 +29,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-import yaml
-
+from code_constraints.core.rulesdoc import RULES_FILENAME, RulesFileError, load_document, write_sections
 from code_constraints.lock.model import LockEntry
 
-LOCKS_FILENAME = "locks.yaml"
+LOCKS_FILENAME = "locks.yaml"  # legacy standalone ledger
 LOCKFILE_VERSION = 1
 
 
@@ -37,24 +40,38 @@ class LockfileError(ValueError):
     """Raised when the lockfile exists but can't be interpreted."""
 
 
-def load_locks(path: Path) -> dict[str, LockEntry]:
-    """Read the lockfile into a target -> entry map. A missing file is an empty
-    ledger (nothing is locked yet), which is not an error."""
-    if not path.is_file():
-        return {}
-    with path.open("r", encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh) or {}
-    if not isinstance(raw, dict):
-        raise LockfileError(f"{path}: top-level must be a mapping")
-    version = raw.get("version", LOCKFILE_VERSION)
-    if not isinstance(version, int) or version > LOCKFILE_VERSION:
-        raise LockfileError(
-            f"{path}: lockfile version {version!r} is newer than this code-constraints "
-            f"supports (max {LOCKFILE_VERSION}); upgrade with `cdec update`."
-        )
-    items = raw.get("locks") or []
-    if not isinstance(items, list):
-        raise LockfileError(f"{path}: 'locks' must be a list")
+def load_locks(config_dir: Path) -> dict[str, LockEntry]:
+    """Read the ledger into a target -> entry map.
+
+    Accepts either a `.cdec/` directory (the normal call) or a direct path to a
+    YAML file holding a `locks:` list. An absent ledger is an empty one —
+    nothing is locked yet — which is not an error.
+    """
+    rules_file, legacy_file = _ledger_paths(config_dir)
+    items: list = []
+    path = rules_file
+    for candidate in (rules_file, legacy_file):
+        if candidate is None or not candidate.is_file():
+            continue
+        try:
+            raw = load_document(candidate)
+        except RulesFileError as exc:
+            raise LockfileError(str(exc)) from exc
+        version = raw.get("version", LOCKFILE_VERSION)
+        if not isinstance(version, int) or version > LOCKFILE_VERSION:
+            raise LockfileError(
+                f"{candidate}: lockfile version {version!r} is newer than this "
+                f"code-constraints supports (max {LOCKFILE_VERSION}); upgrade with "
+                f"`cdec update`."
+            )
+        found = raw.get("locks") or []
+        if not isinstance(found, list):
+            raise LockfileError(f"{candidate}: 'locks' must be a list")
+        if found:
+            # `rules.yaml` wins outright: once migrated, a leftover locks.yaml
+            # must not resurrect entries a lead deliberately released.
+            items, path = found, candidate
+            break
 
     out: dict[str, LockEntry] = {}
     for i, item in enumerate(items):
@@ -78,15 +95,29 @@ def load_locks(path: Path) -> dict[str, LockEntry]:
     return out
 
 
-def write_locks(path: Path, entries: Iterable[LockEntry]) -> None:
-    """Write the ledger, sorted by target so the file diffs cleanly."""
-    payload = {
-        "version": LOCKFILE_VERSION,
-        "locks": [_entry_to_dict(e) for e in sorted(entries, key=lambda e: e.target)],
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
-        yaml.safe_dump(payload, fh, sort_keys=False, default_flow_style=False)
+def write_locks(config_dir: Path, entries: Iterable[LockEntry]) -> Path:
+    """Write the ledger into `rules.yaml`, sorted so the file diffs cleanly.
+
+    Only the `locks:` section is rewritten — every hand-written rule and comment
+    above it is preserved byte for byte. Returns the file written.
+    """
+    rules_file, _ = _ledger_paths(config_dir)
+    write_sections(
+        rules_file,
+        {"locks": [_entry_to_dict(e) for e in sorted(entries, key=lambda e: e.target)]},
+    )
+    return rules_file
+
+
+def _ledger_paths(config_dir: Path) -> tuple[Path, Path | None]:
+    """(rules.yaml, legacy locks.yaml) for a `.cdec/` dir.
+
+    Passing a YAML file directly is also honoured — tests and `--lockfile`-style
+    overrides point straight at one — in which case there is no legacy fallback.
+    """
+    if config_dir.suffix in (".yaml", ".yml"):
+        return config_dir, None
+    return config_dir / RULES_FILENAME, config_dir / LOCKS_FILENAME
 
 
 def now_stamp() -> str:

@@ -4,8 +4,8 @@
 > slice of the bookstore domain with a fully tagged `billing` module and one intentional
 > violation. Every command below is copy-pasteable from the repository root.
 
-Odin support is complete: parser, all seven constraint tags, `cdec enforce` (Engine B) with
-**precise** construction detection, and `cdec lock` (Engine C) with the `odin-ts/1`
+Odin support is complete: parser, all seven constraint tags, the `tag-conformance` rule (`tag-conformance`) with
+**precise** construction detection, and the `implementation-locks` rule (`implementation-locks`) with the `odin-ts/1`
 fingerprinter. Activity and sequence diagrams are not implemented for Odin.
 
 | | |
@@ -164,9 +164,9 @@ the shim file itself**, so its no-op procs never show up as a module class in yo
 
 ---
 
-## 4. Engine A — architectural drift (`cdec check`)
+## 4. the model rules — architectural drift (`cdec check`)
 
-Engine A reads the model only; it never opens a procedure body. Everything in
+the model rules reads the model only; it never opens a procedure body. Everything in
 [`rules.yaml`](../RULES_CATALOGUE.md) works for Odin unchanged.
 
 ```bash
@@ -209,14 +209,14 @@ Try it — delete the `//@cdec sealed` line from `Receipt` and re-run:
 
 ---
 
-## 5. Engine B — implementation conformance (`cdec enforce`)
+## 5. `tag-conformance` — implementation conformance (the `tag-conformance` rule)
 
 ```bash
-cdec enforce examples/odin_demo --lang odin
+cdec check --config examples/odin_demo/.cdec --source examples/odin_demo
 ```
 
 ```
-cdec enforce: 2 conformance violation(s):
+[tags-must-be-honoured] (error) — 2 finding(s):
   - [F-4E5B2B91] [factory] orders/billing.odin:89: 'orders.CheckoutService.quick_receipt'
       constructs 'Receipt' outside its designated factory (ReceiptFactory).
   - [F-5BBDCC93] [no-instantiation] orders/billing.odin:89: 'orders.CheckoutService.quick_receipt'
@@ -261,15 +261,15 @@ CheckoutService :: struct { receipts: ReceiptFactory }
 For a one-off you disagree with, record it in the ledger instead:
 
 ```bash
-cdec baseline allow F-5BBDCC93 --config examples/odin_demo/.cdec --reason "legacy path, ticket #142"
+cdec exceptions allow F-5BBDCC93 --config examples/odin_demo/.cdec --reason "legacy path, ticket #142"
 ```
 
 ---
 
-## 6. Engine C — implementation freeze (`cdec lock`)
+## 6. `implementation-locks` — implementation freeze (the `implementation-locks` rule)
 
 ```bash
-cdec lock list examples/odin_demo --lang odin --config examples/odin_demo/.cdec
+cdec locks examples/odin_demo --lang odin --config examples/odin_demo/.cdec
 # ok   orders.Receipt.formatted  method  (tag)  orders/billing.odin:46
 #      reason: demo baseline
 ```
@@ -277,9 +277,9 @@ cdec lock list examples/odin_demo --lang odin --config examples/odin_demo/.cdec
 Tag a procedure or struct, then baseline it:
 
 ```bash
-cdec lock set examples/odin_demo --lang odin --config examples/odin_demo/.cdec \
+cdec check --automatic-exceptions locks examples/odin_demo --lang odin --config examples/odin_demo/.cdec \
   --reason "receipt wording is contractual"
-cdec lock check examples/odin_demo --lang odin --config examples/odin_demo/.cdec
+cdec check examples/odin_demo --lang odin --config examples/odin_demo/.cdec
 ```
 
 **A lock is an AST identity, not a line range.** For Odin specifically, all of these leave
@@ -294,12 +294,12 @@ Any semantic change to the body — down to swapping the em-dash for a comma in 
 string — fails the check. Accepting one is a privileged, reviewable act:
 
 ```bash
-cdec lock set examples/odin_demo --lang odin --target orders.Receipt.formatted --force \
+cdec check --automatic-exceptions locks examples/odin_demo --lang odin --target orders.Receipt.formatted --force \
   --reason "finance approved the new wording"
 ```
 
-Gate `.cdec/locks.yaml` with CODEOWNERS and that stays a lead-only operation. Locks are
-**not waivable** through `cdec baseline allow` — the refusal points you here instead.
+Gate the `locks:` section of `.cdec/rules.yaml` with CODEOWNERS and that stays a lead-only operation. Locks are
+**not waivable** through `cdec exceptions allow` — the refusal points you here instead.
 
 ---
 
@@ -321,7 +321,7 @@ landed on the file's `static` module class instead.
 different packages, and a procedure taking `^Config` from a third: the parser declines to
 guess. Move the procedure into the owning package.
 
-**`cdec lock` refuses unsupported languages by name.** If you see a message naming the
+**the `implementation-locks` rule refuses unsupported languages by name.** If you see a message naming the
 languages rather than "0 locks", you passed the wrong `--lang`.
 
 ---
@@ -331,8 +331,7 @@ languages rather than "0 locks", you passed the wrong `--lang`.
 Nothing Odin-specific — the same three commands gate everything:
 
 ```yaml
-- run: cdec check   --config .cdec --source .   # Engine A + C
-- run: cdec enforce . --lang odin               # Engine B
+- run: cdec check   --config .cdec --source .   # the model rules + C
 ```
 
 `cdec check` runs the lock verification automatically whenever the project has ledger

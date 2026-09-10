@@ -1,6 +1,10 @@
-"""`cdec enforce` — implementation-conformance engine (Engine B).
+"""Implementation-conformance engine (Engine B).
 
-Decoupled from `code_constraints.lint` (Engine A). See `engine.enforce`.
+Answers "does the code actually obey the constraint tags written on it" by
+re-parsing the source and inspecting method bodies. Driven by the
+`tag-conformance` rule type in `.cdec/rules.yaml`, which is what `cdec check`
+runs; this package stays decoupled from `code_constraints.lint`, and the rule
+is a thin adapter over `engine.enforce`.
 """
 
 from __future__ import annotations

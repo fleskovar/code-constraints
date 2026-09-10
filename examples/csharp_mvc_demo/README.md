@@ -69,7 +69,7 @@ ignores any target without a layer tag, so tagging the abstraction is what lets
 
 `TodoItem` is also `[Immutable]` + `[Sealed]` (get-only properties set once in
 the constructor, `WithDone` returns a new instance). Those are
-implementation-conformance tags that the separate `cdec enforce` command verifies
+implementation-conformance tags that the separate the `tag-conformance` rule command verifies
 against the method bodies.
 
 ## Running it
@@ -113,7 +113,7 @@ when you revert it — the fastest way to feel what the guardrails do.
 
 3. **Drop an architectural tag.** Delete `[Layer("model")]` from `TodoItem`.
    **`freeze-architectural-tags`** fires — the tag recorded in
-   `reference.xmi` is gone. (Run `cdec check --update-reference` to *deliberately*
+   `reference.xmi` is gone. (Run `cdec check --automatic-exceptions reference` to *deliberately*
    accept a new baseline.)
 
 ## Using this as a template
@@ -125,5 +125,5 @@ when you revert it — the fastest way to feel what the guardrails do.
    `[Layer(...)]` tags to match.
 3. Pass every cross-layer collaborator as a constructor-injected typed field so
    the rule can see it.
-4. Run `cdec check --update-reference` once to snapshot your starting point, then
+4. Run `cdec check --automatic-exceptions reference` once to snapshot your starting point, then
    `cdec check` in CI.
