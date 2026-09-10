@@ -38,8 +38,9 @@ _SHIM_TARGETS = {
 }
 
 # Claude assets deployed into target projects: agents plus the architecture-loop
-# skill (the propose → review → lock workflow). Destinations mirror the repo-
-# relative paths, so entries here land at the same spot in the user's project.
+# skill (the propose → review → lock workflow). Each entry is the destination
+# path inside the user's project. The source copies live in the package at
+# `cli/_assets/{agents,skills}/` — this repo does not track its own `.claude/`.
 _AGENT_RELS = [
     ".claude/agents/cdec-architect.md",
     ".claude/agents/oop-refactor-architect.md",
@@ -66,17 +67,22 @@ def _asset(rel: str) -> Path:
     """Resolve a bundled asset by its repo-relative path (e.g.
     "shims/python/cdec_rules.py" or ".claude/agents/cdec-architect.md").
 
-    Prefers the repo-relative source-of-truth file (editable installs); falls
-    back to the packaged copy under `code_constraints/cli/_assets/…` (installed wheels, where
-    `force-include` maps the repo files in). Raises ScaffoldError if missing.
+    Shims prefer the repo-relative source-of-truth file (editable installs) and
+    fall back to the packaged copy under `code_constraints/cli/_assets/…`, where
+    `force-include` maps them in. The `.claude/…` rels have no repo-relative
+    original, so they always resolve to the packaged copy. Raises ScaffoldError
+    if missing.
     """
-    root = _repo_root()
+    # `.claude/…` rels are destination paths only — never read them back out of
+    # a repo root, or an editable install would prefer a developer's own
+    # untracked `.claude/` over the packaged source of truth.
+    root = None if rel.startswith(".claude/") else _repo_root()
     if root is not None:
         candidate = root / rel
         if candidate.is_file():
             return candidate
 
-    # Installed wheel: assets are flattened under code_constraints/cli/_assets/.
+    # Packaged copy: assets are flattened under code_constraints/cli/_assets/.
     #   shims/python/cdec_rules.py        -> _assets/shims/python/cdec_rules.py
     #   .claude/agents/cdec-architect.md  -> _assets/agents/cdec-architect.md
     #   .claude/skills/<name>/SKILL.md   -> _assets/skills/<name>/SKILL.md

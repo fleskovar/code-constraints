@@ -20,16 +20,16 @@ frontend/dist/
 frontend/.svelte-kit/
 
 # IDE
-.vscode/*
-!.vscode/launch.json
+.vscode/
 .idea/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Claude Code: local session state is private, but the agents/skills shipped
-# with the package (see pyproject force-include) are part of the distribution.
-.claude/*
+# Claude Code: local config and session state are private. The agents/skills
+# that ship with the package live in src/code_constraints/cli/_assets/.
+.claude/
+.mcp.json
 .hcm
 CLAUDE.md

@@ -79,19 +79,18 @@ Documentation = "https://github.com/fleskovar/code-constraints/blob/main/docs/TU
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_constraints"]
 
-# Bundle the copyable assets (rule shims + Claude agents) into the wheel so
-# the interactive `cdec` session can copy them into a target project when the
-# package is installed (not just editable). The scaffold module also falls back
-# to the repo-relative originals for editable installs.
+# Bundle the rule shims into the wheel so the interactive `cdec` session can
+# copy them into a target project when the package is installed (not just
+# editable). The scaffold module also falls back to the repo-relative originals
+# for editable installs. The Claude agent and skill assets are not listed here:
+# they live inside the package at `cli/_assets/{agents,skills}/` and ship as
+# ordinary package data.
 [tool.hatch.build.targets.wheel.force-include]
 "shims/python/cdec_rules.py" = "code_constraints/cli/_assets/shims/python/cdec_rules.py"
 "shims/csharp/CodeConstraintsRules.cs" = "code_constraints/cli/_assets/shims/csharp/CodeConstraintsRules.cs"
 "shims/julia/CdecRules.jl" = "code_constraints/cli/_assets/shims/julia/CdecRules.jl"
 "shims/lua/cdec_rules.lua" = "code_constraints/cli/_assets/shims/lua/cdec_rules.lua"
 "shims/odin/cdec_rules.odin" = "code_constraints/cli/_assets/shims/odin/cdec_rules.odin"
-".claude/agents/cdec-architect.md" = "code_constraints/cli/_assets/agents/cdec-architect.md"
-".claude/agents/oop-refactor-architect.md" = "code_constraints/cli/_assets/agents/oop-refactor-architect.md"
-".claude/skills/cdec-architecture-loop/SKILL.md" = "code_constraints/cli/_assets/skills/cdec-architecture-loop/SKILL.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
