@@ -67,4 +67,3 @@ if (Dep-Changed $buildStamp $buildInputs) {
 Write-Host ""
 Write-Host "Done. Next steps:"
 Write-Host "  .\scripts\serve.ps1                    # start the web server"
-Write-Host "  .\scripts\generate.ps1 <path> <lang>   # parse + render a codebase"

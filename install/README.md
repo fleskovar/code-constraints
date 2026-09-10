@@ -15,7 +15,6 @@ needing the installer script.
 - **git**
 - **Python 3.11+**
 - **Node.js 20+** and **npm** (required — the web UI is built from source)
-- *(optional)* **Graphviz `dot`** — only needed for `cdec render` and sequence diagrams
 
 ## Install / update
 

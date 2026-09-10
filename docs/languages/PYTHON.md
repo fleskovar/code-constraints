@@ -43,7 +43,6 @@ the synthetic `static` module class that Odin, Lua and Julia use.
 ```bash
 cdec parse examples/python_demo --lang python --out demo.xmi
 cdec serve            # http://127.0.0.1:8765
-cdec render demo.xmi --diagram class -o demo.svg    # needs Graphviz `dot`
 ```
 
 `--lang` is auto-detected from the file mix when omitted.
@@ -193,10 +192,6 @@ def checkout(cart):
         return
     pay(cart)
 # </uml-activity>
-```
-
-```bash
-cdec render demo.xmi --diagram activity --name checkout -o checkout.svg
 ```
 
 Supported: `<uml-class />`,

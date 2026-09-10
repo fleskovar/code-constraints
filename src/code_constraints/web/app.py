@@ -1,8 +1,9 @@
 """FastAPI backend for the code-constraints web viewer.
 
 Endpoints are intentionally thin orchestrators over `code_constraints.core` + parsers. All
-expensive artifacts (parsed XMIs, rendered SVGs) live on disk under
-`.cdec_cache/<project_id>/` so the UI can reload freely. No auth — local use only.
+expensive artifacts (parsed XMIs) live on disk under `.cdec_cache/<project_id>/` so the
+UI can reload freely. Every diagram is a JSON graph the client lays out; the server
+renders no images. No auth — local use only.
 """
 
 from __future__ import annotations
@@ -27,12 +28,6 @@ from pydantic import BaseModel
 from code_constraints.lint.config import REFERENCE_FILENAME, RULES_FILENAME
 
 from code_constraints.core.diff import diff_projects
-from code_constraints.core.dot import (
-    emit_activity_diagram,
-    emit_class_diagram,
-    emit_package_diagram,
-    emit_sequence_diagram,
-)
 from code_constraints.core.editor_io import project_from_json, project_to_json
 from code_constraints.core.model import SUPPORTED_LANGUAGES
 from code_constraints.core.graph_model import (
@@ -44,7 +39,6 @@ from code_constraints.core.graph_model import (
     build_sequence_change_list,
     build_sequence_graph,
 )
-from code_constraints.core.render import GraphvizNotFound, render_svg
 from code_constraints.core.xmi_reader import read_project
 from code_constraints.core.xmi_writer import build_tree as build_xmi_tree
 from code_constraints.core.xmi_writer import write_project
@@ -794,32 +788,6 @@ def list_diagrams(xmi_id: str) -> DiagramListing:
     )
 
 
-@app.get("/api/xmi/{xmi_id}/render")
-def render(xmi_id: str, diagram: str, name: Optional[str] = None) -> Response:
-    proj = read_project(_xmi_path(xmi_id))
-    if diagram == "class":
-        text = emit_class_diagram(proj)
-    elif diagram == "package":
-        text = emit_package_diagram(proj)
-    elif diagram == "activity":
-        act = next((a for a in proj.activities if a.name == name), None)
-        if act is None:
-            raise HTTPException(status_code=404, detail=f"activity {name} not found")
-        text = emit_activity_diagram(act)
-    elif diagram == "sequence":
-        seq = next((s for s in proj.sequences if s.name == name), None)
-        if seq is None:
-            raise HTTPException(status_code=404, detail=f"sequence {name} not found")
-        text = emit_sequence_diagram(seq)
-    else:
-        raise HTTPException(status_code=400, detail=f"unknown diagram type: {diagram}")
-    try:
-        svg = render_svg(text, cache_dir=CACHE_ROOT / "svg")
-    except GraphvizNotFound as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return Response(content=svg, media_type="image/svg+xml")
-
-
 @app.get("/api/xmi/{xmi_id}/model")
 def xmi_model(xmi_id: str, diagram: str = "class", name: Optional[str] = None) -> dict:
     """JSON graph payload (nodes + edges) for an interactive canvas.
@@ -1051,8 +1019,16 @@ class _NoCacheStaticFiles(StaticFiles):
         return response
 
 
-_frontend_dist = Path(__file__).resolve().parents[3] / "frontend" / "dist"
-if _frontend_dist.exists():
+# A source checkout (editable install, `make serve`) has the built SPA at
+# ``frontend/dist``; an installed wheel carries it as package data at
+# ``web/_static``. The checkout wins, so a stale embedded copy never shadows a
+# fresh `npm run build`.
+_here = Path(__file__).resolve()
+_frontend_dist = next(
+    (d for d in (_here.parents[3] / "frontend" / "dist", _here.parent / "_static") if d.exists()),
+    None,
+)
+if _frontend_dist is not None:
     app.mount("/", _NoCacheStaticFiles(directory=str(_frontend_dist), html=True), name="spa")
 else:
 

@@ -68,5 +68,4 @@ cat <<EOF
 
 Done. Next steps:
   ./scripts/serve.sh                    # start the web server
-  ./scripts/generate.sh <path> <lang>   # parse + render a codebase
 EOF

@@ -76,6 +76,11 @@ Repository = "https://github.com/fleskovar/code-constraints"
 Issues = "https://github.com/fleskovar/code-constraints/issues"
 Documentation = "https://github.com/fleskovar/code-constraints/blob/main/docs/TUTORIAL.md"
 
+# The built Svelte SPA is git-ignored (it is generated), so hatchling skips it
+# by default. `artifacts` is the opt-back-in for exactly that case.
+[tool.hatch.build]
+artifacts = ["src/code_constraints/web/_static/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_constraints"]
 
@@ -84,7 +89,9 @@ packages = ["src/code_constraints"]
 # editable). The scaffold module also falls back to the repo-relative originals
 # for editable installs. The Claude agent and skill assets are not listed here:
 # they live inside the package at `cli/_assets/{agents,skills}/` and ship as
-# ordinary package data.
+# ordinary package data. The built Svelte SPA is package data too: `make dist`
+# copies frontend/dist into web/_static first, so an installed wheel serves the
+# web UI and not just the API.
 [tool.hatch.build.targets.wheel.force-include]
 "shims/python/cdec_rules.py" = "code_constraints/cli/_assets/shims/python/cdec_rules.py"
 "shims/csharp/CodeConstraintsRules.cs" = "code_constraints/cli/_assets/shims/csharp/CodeConstraintsRules.cs"

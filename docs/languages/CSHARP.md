@@ -181,12 +181,8 @@ public void HandleLogin(User u) {
 // </uml-sequence>
 ```
 
-```bash
-cdec render demo.xmi --diagram sequence --name login -o login.svg
-```
-
-Sequence diagrams still render through Graphviz (a static SVG); class, package and activity
-diagrams render on the interactive SvelteFlow canvas.
+Open the viewer with `cdec serve` and pick the sequence by name. Class, package,
+activity and sequence diagrams all render on the interactive SvelteFlow canvas.
 
 ---
 

@@ -44,7 +44,7 @@ PORT ?= 8765
 
 .PHONY: help venv setup dev install-dev install install-pipx uninstall \
         frontend-deps frontend-build frontend-check frontend clean-frontend \
-        build dist package check-dist test test-cov lint format typecheck \
+        frontend-embed build dist package check-dist test test-cov lint format typecheck \
         verify test-cases test-case debug-case update-cases demo serve clean clean-venv distclean
 
 # ---------------------------------------------------------------------------
@@ -88,13 +88,13 @@ install-dev: venv ## Editable install with dev extras (the development version)
 	@echo ">> cdec available as: $(VENV_BIN)/cdec"
 	@echo ">> MCP server available as: $(VENV_BIN)/cdec-mcp"
 
-install: venv ## Install from source into the venv (non-editable)
+install: venv frontend-embed ## Install from source into the venv (non-editable)
 	@echo ">> installing code-constraints from source (non-editable)"
 	$(PIP) install --upgrade pip
 	$(PIP) install .
 	@echo ">> cdec available as: $(VENV_BIN)/cdec"
 
-install-pipx: ## Install the cdec CLI + MCP server globally from this checkout via pipx
+install-pipx: frontend-embed ## Install the cdec CLI + MCP server globally from this checkout via pipx
 	@command -v pipx >/dev/null 2>&1 || { echo "pipx not found — see https://pipx.pypa.io"; exit 1; }
 	pipx install --force ".[mcp]"
 	@echo ">> cdec installed globally; run: cdec --help"
@@ -120,8 +120,22 @@ frontend-check: ## Run svelte-check
 
 frontend: frontend-deps frontend-build ## Install frontend deps and build the SPA
 
+# The wheel serves the SPA from package data, so the built bundle has to sit
+# inside the package before hatchling collects it. Skipped (with a warning)
+# when the bundle is not built, so `pip install .` on a bare clone still works.
+EMBED := src/code_constraints/web/_static
+
+frontend-embed: ## Copy frontend/dist into the package as web/_static
+	@rm -rf $(EMBED)
+	@if [ -d "$(FRONTEND)/dist" ]; then \
+	  echo ">> embedding $(FRONTEND)/dist -> $(EMBED)"; \
+	  mkdir -p $(EMBED) && cp -r $(FRONTEND)/dist/. $(EMBED)/; \
+	else \
+	  echo "warning: $(FRONTEND)/dist not built - the wheel serves the API only"; \
+	fi
+
 clean-frontend: ## Remove frontend build output
-	rm -rf $(FRONTEND)/dist
+	rm -rf $(FRONTEND)/dist $(EMBED)
 
 # ---------------------------------------------------------------------------
 # Build / package
@@ -129,15 +143,15 @@ clean-frontend: ## Remove frontend build output
 
 build: dist ## Alias for `dist`
 
-dist: clean-dist frontend-build ## Build the wheel + sdist into dist/
+dist: clean-dist frontend-build frontend-embed ## Build the wheel + sdist into dist/
 	@echo ">> building distributable"
 	$(PY) -m build
 	@echo
 	@ls -l dist
 	@echo
-	@echo "NOTE: the wheel ships the Python packages, the rule shims, and the"
-	@echo "      Claude assets — but NOT frontend/dist. An installed wheel serves"
-	@echo "      the API and a JSON placeholder at /, not the SPA."
+	@echo "NOTE: the wheel ships the Python packages, the rule shims, the Claude"
+	@echo "      assets, and the built SPA (as package data at web/_static), so"
+	@echo "      an installed wheel serves the web UI at / as well as the API."
 
 package: dist ## Alias for `dist`
 

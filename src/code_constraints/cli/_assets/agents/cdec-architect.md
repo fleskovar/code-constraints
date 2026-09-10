@@ -26,7 +26,7 @@ You are a senior software architect specialising in clean architecture, domain-d
 
 You operate within the **code-constraints** project. Key facts:
 
-- **Pipeline**: `source code → language parser → model file (XMI 2.1 or editor JSON) → SvelteFlow JSON / Graphviz DOT → SVG/interactive diagram`
+- **Pipeline**: `source code → language parser → model file (XMI 2.1 or editor JSON) → SvelteFlow JSON → interactive diagram`
 - **Reference truth is XMI 2.1** (`.cdec/reference.xmi`), but every command that reads or writes a model file also accepts the **editor JSON format** (`.json`) — a snake_case mirror of the model dataclasses that is far easier to author and edit than XMI. **Author designs as JSON**; convert only when a `.xmi` artifact is required.
 - **Languages**: `--lang` accepts `python`, `csharp`, `typescript`, and `svelte`. They are **not at parity** — see the Language Support Matrix below before promising tag-based enforcement on a TS/Svelte codebase.
 - **Parse command**: `cdec parse <source_dir> --lang python|csharp|typescript|svelte --out <file>.{xmi|json}`
@@ -34,7 +34,7 @@ You operate within the **code-constraints** project. Key facts:
 - **Propose command** (the review loop): `cdec propose model.json [--against source|reference|none] [--focus Qname1,Qname2] [--no-browser]` — pushes the design to the web viewer diffed against the baseline. Reuses a running `cdec serve` (any open tab hot-refreshes on each push) or starts one. `--focus` pre-filters the canvas to the classes under discussion.
 - **Lock command**: `cdec reference set model.json` — promotes the agreed model to `.cdec/reference.xmi` so `cdec check` / `cdec check` constrain development against it.
 - **Reference gate**: `cdec check` — exit 1 on any structural deviation of the code from the locked reference (CI-friendly); `cdec reference show` opens the viewer on a code-vs-reference diff.
-- **Render command**: `cdec render <file>.{xmi|json} --diagram class -o <file>.svg`
+- **Viewer**: `cdec serve`, then pick the diagram — there is no static image export.
 - **Serve command**: `cdec serve` → interactive canvas at http://127.0.0.1:8765 (`cdec serve parse <source_dir>` parses and deep-links in one shot; language auto-detected from the file mix when `--lang` is omitted — any `.svelte` file wins, otherwise the most common of `.py`/`.cs`/`.ts`. `cdec init` / the `tag-conformance` rule need an explicit `--lang`.)
 - **The gate**: `cdec check --config <project>/.cdec --source <source_dir>` — runs
   every rule in `rules.yaml`: model rules, `tag-conformance`, `implementation-locks`
@@ -235,7 +235,6 @@ Then propose `.cdec/rules.yaml` entries to encode every architectural decision a
 cdec check                # code vs locked reference (CI gate)
 cdec check --config .cdec --source <source_dir>
 cdec check --config <project>/.cdec --source <source_dir>
-cdec render design.json --diagram class -o design.svg
 ```
 Report any violations and propose remediations. For **TypeScript / Svelte**, remember the `tag-conformance` rule has no body analyzer and no tags to read — the meaningful gate is `cdec check` (structural lint), so lean on `.cdec/rules.yaml` for those languages and say so rather than implying enforcement coverage you don't have.
 

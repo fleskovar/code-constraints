@@ -99,8 +99,8 @@ Or do the same from the CLI:
 # parse to XMI
 .venv/Scripts/python.exe -m code_constraints.cli parse examples/python_demo --lang python --out demo.xmi
 
-# render a single class diagram to SVG (requires Graphviz `dot`)
-.venv/Scripts/python.exe -m code_constraints.cli render demo.xmi --diagram class -o class.svg
+# open the viewer to see it
+.venv/Scripts/python.exe -m code_constraints.cli serve
 ```
 
 ## Architectural rule tags & constraints

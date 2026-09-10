@@ -33,3 +33,5 @@ Thumbs.db
 .mcp.json
 .hcm
 CLAUDE.md
+# Built SPA copied into the package by `make frontend-embed` for packaging.
+src/code_constraints/web/_static/

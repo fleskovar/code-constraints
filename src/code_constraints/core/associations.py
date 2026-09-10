@@ -1,7 +1,7 @@
 """Resolve a typed attribute to a project class for association edges.
 
-Extracted from `dot.py` so the SvelteFlow JSON model and DOT emitter can share
-the same wrapper-stripping and lookup rules without circular imports.
+Shared by every graph builder in `graph_model.py` so the class and package
+canvases apply the same wrapper-stripping and lookup rules.
 """
 
 from __future__ import annotations

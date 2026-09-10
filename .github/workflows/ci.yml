@@ -32,8 +32,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,mcp]"
 
-      # Graphviz is intentionally not installed: the renderer shells out to
-      # `dot`, but the tests assert on emitted DOT text, not rendered SVG.
       - name: Tests (pytest)
         run: python -m pytest -q
 

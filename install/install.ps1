@@ -198,15 +198,7 @@ if (($env:Path.Split(';')) -notcontains $scriptsDir) {
     $env:Path = "$scriptsDir;$env:Path"
 }
 
-# --- 6. Graphviz note (no auto-install) ------------------------------------
-if (Get-CommandPath "dot") {
-    Ok "Graphviz 'dot' found - rendering enabled"
-} else {
-    Warn "Graphviz 'dot' not found. 'cdec render' and sequence diagrams need it."
-    Warn "Install from https://graphviz.org/download/ or set CDEC_DOT_BIN to the binary."
-}
-
-# --- 7. Done ---------------------------------------------------------------
+# --- 6. Done ---------------------------------------------------------------
 Write-Host ""
 Info "code-constraints is installed at $repoDir"
 Write-Host ""

@@ -51,8 +51,8 @@ configuration, and a passing *and* failing example — see the
 ## 1. Mental model
 
 code-constraints parses a source tree into a language-agnostic UML model, serialised to
-**XMI 2.1** as the on-disk source of truth. From there it can render diagrams, diff two
-snapshots, and enforce architectural constraints.
+**XMI 2.1** as the on-disk source of truth. From there it can diagram the code in the
+browser, diff two snapshots, and enforce architectural constraints.
 
 **One file, one command.** Everything a project commits lives in `.cdec/rules.yaml`, and
 `cdec check` is the whole gate. Four kinds of rule run inside it. They share a rule
@@ -211,16 +211,6 @@ Parse a source tree and write an XMI 2.1 file.
 cdec parse PATH --lang L --out FILE.xmi
 ```
 
-#### `cdec render`
-
-Render an SVG from a stored XMI. Requires Graphviz `dot` on `PATH` (or `$CDEC_DOT_BIN`).
-
-```
-cdec render XMI --diagram class|package|activity|sequence [--name NAME] -o OUT.svg
-```
-
-`--name` is required for `activity` and `sequence` diagrams.
-
 #### `cdec diff`
 
 Diff two **git revisions** and emit an annotated XMI (added/removed/changed elements).
@@ -264,7 +254,7 @@ rule tags), which makes it far easier to author or edit by hand — or by an AI 
 XMI. Converting back produces standard XMI again.
 
 > Every command that reads or writes a model file accepts **either** format. `parse --out
-> model.json`, `render model.json`, `reference set model.json` and `propose model.json` all
+> model.json`, `reference set model.json` and `propose model.json` all
 > work, so `convert` is only needed when you explicitly want the other representation on
 > disk.
 
@@ -1166,7 +1156,6 @@ Every command returns `0` on success. Non-zero codes for CI gating:
 | `cdec check` | Any violation at or above `--fail-on`, from any rule type | Missing or invalid `rules.yaml`, unknown rule type, or a language mismatch in a diff |
 | `cdec exceptions patch` / `allow` | A key matched no current issue, was malformed, or named a lock | Config error, or an unreadable ledger |
 | `cdec exceptions remove` | A key was not accepted in the first place | Unreadable ledger |
-| `cdec render` | Requested diagram not found | Graphviz `dot` not installed |
 | `cdec reference set` / `show` | — | Model unreadable, or unresolvable arguments |
 | `cdec parse` / `diff*` / `convert` / `init` / `update*` | Operation error (e.g. refused overwrite, diff language mismatch) | — |
 | `cdec enforce` / `cdec lock` / `cdec reference test` | — | Retired — prints the rule type that replaced it |
@@ -1179,8 +1168,8 @@ Two things a pipeline should read from `--json-out` rather than the exit code:
 anyway) and `summary.skipped` (a rule that could not run, which is not a failure but is
 also not a pass).
 
-`cdec parse`, `cdec diff*`, and the parsers do **not** require Graphviz; only `cdec render`
-and the viewer's SVG endpoint do.
+No command needs an external binary. Diagrams are JSON graphs the browser lays out, so a
+CI runner with Python alone can run the whole gate.
 
 ---
 

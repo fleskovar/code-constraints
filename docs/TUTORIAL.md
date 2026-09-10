@@ -72,9 +72,8 @@ cdec --help
 
 - **Python 3.11+** — required.
 - **Node 20+** — only to build the web viewer.
-- **Graphviz** (`dot` on `PATH`, or `$CDEC_DOT_BIN`) — only for `cdec render` and sequence
-  diagrams in the viewer. Parsing, diffing, and *all four enforcement engines* work
-  without it.
+
+There is no external binary to install. Diagrams are JSON graphs the browser lays out.
 
 > The web viewer defaults to port **8765**, not 8000 — port 8000 is reserved by `http.sys`
 > on many Windows machines. Override with `--port`.
@@ -144,7 +143,7 @@ The JSON is a snake_case mirror of the internal model:
 ```
 
 **Every command that reads or writes a model accepts either format**, chosen by file
-extension. `parse --out m.json`, `render m.json`, `reference set m.json` and
+extension. `parse --out m.json`, `reference set m.json` and
 `propose m.json` all work. You only need `convert` when you explicitly want the other
 representation on disk.
 
@@ -173,25 +172,6 @@ cdec serve                       # http://127.0.0.1:8765
 cdec serve --port 9000           # if 8765 is taken
 ```
 
-### 1.4 Render a static diagram
-
-For a one-shot image — a PR attachment, a wiki page, an architecture doc:
-
-```bash
-cdec render demo.xmi --diagram class   -o class.svg
-cdec render demo.xmi --diagram package -o packages.svg
-```
-
-This path requires **Graphviz**. `--diagram` accepts `class`, `package`, `activity`, and
-`sequence`; the latter two also need `--name`:
-
-```bash
-cdec render demo.xmi --diagram activity --name checkout -o checkout.svg
-```
-
-Activity and sequence diagrams only exist if the source contains **embedded diagram tags** —
-see [Part 11](#115-embedded-diagram-tags).
-
 ### Try it
 
 ```bash
@@ -213,7 +193,10 @@ methods, and dependencies* changed — and colour them: **green** added, **red**
 
 ```bash
 cdec diff main feature-branch --lang python --out change.xmi
-cdec render change.xmi --diagram class -o change.svg
+```
+
+Open the result with `cdec serve` to review it on the canvas.
+
 ```
 
 Both revisions are checked out into a temporary directory, so **your working tree is never
@@ -1426,11 +1409,7 @@ Supported: `<uml-class />`, `<uml-activity name="…" granularity="control-flow|
 `<uml-sequence name="…" root="…">`. Tag parsing is intentionally forgiving — a malformed tag
 is skipped, never fatal.
 
-Render them with `--name`:
-
-```bash
-cdec render demo.xmi --diagram activity --name checkout -o checkout.svg
-```
+Pick them by name in the viewer's diagram list.
 
 ---
 
@@ -1440,15 +1419,10 @@ cdec render demo.xmi --diagram activity --name checkout -o checkout.svg
 The console script is not on `PATH`. Use `python -m code_constraints.cli …`, or activate the
 venv (`.venv/Scripts/activate` on Windows, `.venv/bin/activate` elsewhere).
 
-**`GraphvizNotFound` / render fails**
-Install [Graphviz](https://graphviz.org/download/) and put `dot` on `PATH`, or set
-`$CDEC_DOT_BIN` to the binary. Only `cdec render` and sequence diagrams in the viewer need
-it — parsing, diffing, and all four engines do not.
-
 **Web UI shows raw JSON instead of the app**
 `frontend/dist/` is not built. Run `make frontend-build` (or `cd frontend && npm run build`).
-An installed **wheel does not ship the frontend** — use a clone or the standalone installer
-if you want the viewer.
+A wheel built by `make dist` ships the built viewer inside the package, so an installed
+wheel serves the UI; a wheel built without that step serves the API only.
 
 **My latest frontend change isn't showing**
 `cdec serve` serves the *built* bundle. Re-run `npm run build`, or use `npm run dev` for

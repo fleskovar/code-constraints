@@ -176,15 +176,7 @@ case ":$PATH:" in
     ;;
 esac
 
-# --- 6. Graphviz note (no auto-install) ------------------------------------
-if command -v dot >/dev/null 2>&1; then
-  ok "Graphviz 'dot' found — rendering enabled"
-else
-  warn "Graphviz 'dot' not found. 'cdec render' and sequence diagrams need it."
-  warn "Install via your package manager (e.g. 'apt install graphviz' / 'brew install graphviz') or set CDEC_DOT_BIN."
-fi
-
-# --- 7. Done ---------------------------------------------------------------
+# --- 6. Done ---------------------------------------------------------------
 echo
 info "code-constraints is installed at $REPO_DIR"
 echo

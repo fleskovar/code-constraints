@@ -435,11 +435,6 @@ export const api = {
   diagrams(xmiId: string): Promise<DiagramListing> {
     return jsonFetch(`/api/xmi/${xmiId}/diagrams`);
   },
-  renderUrl(xmiId: string, diagram: string, name?: string): string {
-    const q = new URLSearchParams({ diagram });
-    if (name) q.set("name", name);
-    return `/api/xmi/${xmiId}/render?${q.toString()}`;
-  },
   classGraph(xmiId: string): Promise<ClassGraph> {
     return jsonFetch(`/api/xmi/${xmiId}/model?diagram=class`);
   },

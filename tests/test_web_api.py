@@ -433,3 +433,24 @@ def test_xmi_source_download(client: TestClient) -> None:
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/xml")
     assert b"<xmi:XMI" in r.content
+
+
+def test_spa_mount_prefers_the_checkout_over_the_embedded_copy() -> None:
+    """A stale packaged bundle must never shadow a fresh `npm run build`.
+
+    The wheel ships the built SPA as package data at ``web/_static`` (see
+    `make frontend-embed`), but a source checkout serves ``frontend/dist``.
+    If the precedence flips, `make serve` silently shows the last packaged
+    build and every frontend edit looks like it did not take.
+    """
+    from code_constraints.web import app as app_module
+
+    checkout = Path(app_module.__file__).resolve().parents[3] / "frontend" / "dist"
+    embedded = Path(app_module.__file__).resolve().parent / "_static"
+    if not checkout.exists():
+        pytest.skip("frontend/dist not built")
+
+    assert app_module._frontend_dist == checkout, (
+        f"SPA mount resolved to {app_module._frontend_dist}, expected the checkout "
+        f"bundle at {checkout} (embedded copy present: {embedded.exists()})"
+    )

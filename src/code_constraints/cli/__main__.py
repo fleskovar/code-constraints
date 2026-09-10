@@ -13,15 +13,8 @@ from git import Repo
 from code_constraints.cli.detect import detect_language
 
 from code_constraints.core.diff import diff_projects
-from code_constraints.core.dot import (
-    emit_activity_diagram,
-    emit_class_diagram,
-    emit_package_diagram,
-    emit_sequence_diagram,
-)
 from code_constraints.core.model import SUPPORTED_LANGUAGES, SourceLanguage
 from code_constraints.core.model_io import UnsupportedModelFormat, load_model, save_model
-from code_constraints.core.render import GraphvizNotFound, render_svg
 from code_constraints.core.xmi_writer import write_project
 from code_constraints.lint.baseline import load_baseline, write_baseline
 from code_constraints.lint.config import (
@@ -51,7 +44,7 @@ app = typer.Typer(
     help=(
         "code-constraints (cdec) — enforce architectural and implementation "
         "constraints on a codebase. "
-        "Model it with parse / render / diff. Gate it with `cdec check`, which "
+        "Model it with parse / convert / diff. Gate it with `cdec check`, which "
         "runs every rule in .cdec/rules.yaml — architectural rules, source-tag "
         "conformance, implementation locks and the reference-architecture gate "
         "alike. Keep it moving with `cdec exceptions`, which records the "
@@ -98,32 +91,6 @@ def convert(
     project = _load_model_cli(src)
     _save_model_cli(project, dest)
     typer.echo(f"wrote {dest}")
-
-
-@app.command()
-def render(
-    xmi: Path = typer.Argument(..., exists=True, dir_okay=False),
-    diagram: str = typer.Option(
-        ..., "--diagram", help="class | package | activity | sequence"
-    ),
-    name: Optional[str] = typer.Option(
-        None, "--name", help="Required for activity/sequence diagrams."
-    ),
-    out: Path = typer.Option(..., "-o", "--out", help="Output SVG path"),
-) -> None:
-    """Render an SVG from a stored model file (.xmi or .json)."""
-    project = _load_model_cli(xmi)
-    text = _emit(project, diagram, name)
-    if text is None:
-        typer.echo(f"no diagram of kind {diagram} (name={name}) found", err=True)
-        raise typer.Exit(code=1)
-    try:
-        svg = render_svg(text, cache_dir=Path(".cdec_cache"))
-    except GraphvizNotFound as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=2) from exc
-    out.write_bytes(svg)
-    typer.echo(f"wrote {out}")
 
 
 @app.command()
@@ -1542,24 +1509,6 @@ def _parse_project(path: Path, lang: str):
         return parse_source(path, lang)
     except PipelineError as exc:
         raise typer.BadParameter(str(exc)) from exc
-
-
-def _emit(project, diagram: str, name: Optional[str]) -> Optional[str]:
-    if diagram == "class":
-        return emit_class_diagram(project)
-    if diagram == "package":
-        return emit_package_diagram(project)
-    if diagram == "activity":
-        if not name:
-            raise typer.BadParameter("--name required for activity diagram")
-        act = next((a for a in project.activities if a.name == name), None)
-        return emit_activity_diagram(act) if act else None
-    if diagram == "sequence":
-        if not name:
-            raise typer.BadParameter("--name required for sequence diagram")
-        seq = next((s for s in project.sequences if s.name == name), None)
-        return emit_sequence_diagram(seq) if seq else None
-    raise typer.BadParameter(f"unknown diagram type: {diagram}")
 
 
 def _checkout_revision(repo: Repo, ref: str, dest: Path) -> Path:

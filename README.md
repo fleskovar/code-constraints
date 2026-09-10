@@ -53,7 +53,7 @@ into a UML model, persists it as XMI 2.1 (or editor JSON), renders class / packa
 activity / sequence diagrams, diffs any two revisions, and serves an interactive browser
 canvas for reviewing and editing the target architecture before locking it in.
 
-The interactive canvas is built on [SvelteFlow](https://svelteflow.dev/) (`@xyflow/svelte`) with [dagre](https://github.com/dagrejs/dagre) auto-layout. Sequence diagrams still render via the static Graphviz SVG path.
+Every diagram — class, package, activity and sequence — is built on [SvelteFlow](https://svelteflow.dev/) (`@xyflow/svelte`) with [dagre](https://github.com/dagrejs/dagre) auto-layout. The server sends a JSON graph and the browser lays it out, so there is no external renderer to install.
 
 ## Install (standalone)
 
@@ -103,12 +103,8 @@ cd frontend && npm install && npm run build && cd ..
 # Parse a project to XMI
 cdec parse path/to/code --lang python --out project.xmi
 
-# Render a single diagram to SVG (one-shot, no browser)
-cdec render project.xmi --diagram class -o class.svg
-
 # Diff two git revisions
 cdec diff main feature --lang python --out diff.xmi
-cdec render diff.xmi --diagram class -o class-diff.svg
 
 # Launch the interactive web viewer at http://127.0.0.1:8765
 cdec serve
@@ -293,12 +289,6 @@ cdec check [SOURCE]       # CI gate: exit 1 if code deviates structurally
 cdec reference show [SOURCE]       # open the viewer on a code-vs-reference diff
 ```
 
-### `cdec render`
-Render an SVG from a stored XMI file. Needs Graphviz `dot`. `--name` is required for `activity`/`sequence`.
-```bash
-cdec render project.xmi --diagram {class|package|activity|sequence} [--name NAME] -o out.svg
-```
-
 ### `cdec diff`
 Diff two git revisions and emit an annotated XMI (added/removed/changed). Checks out both refs into a temp dir, never touching the working tree.
 ```bash
@@ -393,7 +383,7 @@ After `cdec serve`, open http://127.0.0.1:8765 and register a project path. The 
 - **Diff walkthrough** — when viewing a diff XMI, a Prev/Next change list appears that pans the camera to each affected class.
 - **Rule badges** — tagged classes/operations carry colour-coded badges (hover for the rule + parameters); badge changes participate in the diff styling.
 
-Package and activity diagrams also render interactively. Sequence diagrams remain on the static SVG path.
+Package, activity and sequence diagrams all render on the same interactive canvas.
 
 ### Editing diagrams in the browser
 
@@ -533,8 +523,9 @@ A bypassed run prints a banner, still collects every violation, and sets `summar
 ## Requirements
 
 - Python 3.11+
-- [Graphviz](https://graphviz.org/download/) — the `dot` binary must be on `$PATH` (or set `$CDEC_DOT_BIN` to point at it). Needed for `cdec render` and the sequence-diagram fallback in the web viewer. `parse`, `diff`, `check`, and `enforce` do not need it.
 - Node 20+ for building / iterating on the frontend.
+
+There is no external binary to install. Every command — `parse`, `diff`, `check`, `serve` — runs on Python alone.
 
 ## Frontend development
 
