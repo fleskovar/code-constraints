@@ -22,7 +22,8 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from git import GitCommandError, InvalidGitRepositoryError, Repo
+from git import Commit, GitCommandError, InvalidGitRepositoryError, Repo
+from git.exc import ODBError
 from pydantic import BaseModel
 
 from code_constraints.lint.config import REFERENCE_FILENAME, RULES_FILENAME
@@ -535,6 +536,24 @@ def parse_project_endpoint(project_id: str) -> XmiInfo:
     return xmi_info
 
 
+def _commit_subject(commit: Optional[Commit]) -> Optional[str]:
+    """First line of a commit message, or None when the object is unavailable.
+
+    A shallow clone knows HEAD's parent *hash* but does not have its object —
+    `git clone --depth 1`, and every default `actions/checkout`, produce one.
+    Reading `.message` triggers a lazy load that raises there, so the whole
+    endpoint used to 500. The hash is still worth reporting, so only the
+    subject degrades to None.
+    """
+    if commit is None:
+        return None
+    try:
+        message = commit.message
+    except (ValueError, ODBError):
+        return None
+    return message.splitlines()[0] if message else None
+
+
 @app.get("/api/projects/{project_id}/git-info", response_model=GitInfo)
 def git_info(project_id: str) -> GitInfo:
     """Summary of the project path's git state.
@@ -574,10 +593,10 @@ def git_info(project_id: str) -> GitInfo:
         branch=branch,
         head_sha=head.hexsha,
         head_short=head.hexsha[:10],
-        head_subject=head.message.splitlines()[0] if head.message else "",
+        head_subject=_commit_subject(head) or "",
         parent_sha=parent.hexsha if parent else None,
         parent_short=parent.hexsha[:10] if parent else None,
-        parent_subject=(parent.message.splitlines()[0] if parent and parent.message else None),
+        parent_subject=_commit_subject(parent),
         is_dirty=repo.is_dirty(untracked_files=False),
         repo_root=str(repo_root) if repo_root else None,
         subpath=subpath,
@@ -985,11 +1004,27 @@ async def edit_to_xmi(request: Request) -> Response:
 # ---------- helpers ----------
 
 def _checkout(repo: Repo, ref: str, dest: Path) -> Path:
+    """Extract the tree at `ref` into `dest`, without touching the working tree.
+
+    A shallow clone resolves refs whose objects it does not actually have, so
+    both the lookup and the archive can fail on history that was never
+    fetched. That is the caller asking for something absent, not a server
+    fault, so it answers 400 with the command that fixes it.
+    """
     dest.mkdir(parents=True, exist_ok=True)
-    commit = repo.commit(ref)
     archive = dest.with_suffix(".tar")
-    with archive.open("wb") as fh:
-        repo.archive(fh, treeish=commit.hexsha, format="tar")
+    try:
+        commit = repo.commit(ref)
+        with archive.open("wb") as fh:
+            repo.archive(fh, treeish=commit.hexsha, format="tar")
+    except (GitCommandError, ODBError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"cannot read git ref {ref!r}: {exc}. If this is a shallow clone, "
+                f"the older commits were never fetched — run `git fetch --unshallow`."
+            ),
+        ) from exc
     shutil.unpack_archive(str(archive), str(dest), format="tar")
     archive.unlink()
     return dest

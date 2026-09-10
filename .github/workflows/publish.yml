@@ -31,6 +31,11 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The suite exercises real git history (git-info, diff against
+          # HEAD~1). The default fetch-depth of 1 leaves HEAD's parent object
+          # missing, which makes those tests fail or vacuously skip.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -119,6 +120,15 @@ def test_diff_with_subpath_missing_on_one_side_treats_as_empty(
     info = r.json()
     if not info["is_git"] or not info["parent_sha"]:
         pytest.skip("not in a git repo with a parent commit")
+    # A shallow clone names HEAD~1 but has none of its objects, so there is no
+    # older tree to diff against. That is a 400 from the endpoint, tested
+    # separately; this test is about the subpath case.
+    shallow = subprocess.run(
+        ["git", "-C", info["repo_root"], "rev-parse", "--is-shallow-repository"],
+        capture_output=True, text=True, check=False,  # a failure just means "not shallow"
+    ).stdout.strip()
+    if shallow == "true":
+        pytest.skip("shallow clone: HEAD~1 trees are not available")
     subpath = info["subpath"] or ""
     r = client.post(
         f"/api/projects/{project_id}/diff",
@@ -454,3 +464,81 @@ def test_spa_mount_prefers_the_checkout_over_the_embedded_copy() -> None:
         f"SPA mount resolved to {app_module._frontend_dist}, expected the checkout "
         f"bundle at {checkout} (embedded copy present: {embedded.exists()})"
     )
+
+
+def test_git_info_survives_a_shallow_clone(client: TestClient, tmp_path) -> None:
+    """A shallow clone has HEAD's parent *hash* but not its object.
+
+    `git clone --depth 1` — and every default `actions/checkout` — produces
+    one. Reading the parent's message there raises, which used to 500 the
+    whole endpoint. The hash must still be reported; only the subject drops.
+    """
+    origin = tmp_path / "origin"
+    (origin / "src").mkdir(parents=True)
+    subprocess.run(["git", "-C", str(origin), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(origin), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(origin), "config", "user.name", "Test"], check=True)
+    for n in ("first", "second"):
+        (origin / "src" / "m.py").write_text(f"class {n.title()}:\n    pass\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(origin), "commit", "-qm", f"{n} commit"], check=True)
+
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", origin.as_uri(), str(shallow)], check=True
+    )
+    # Guard the guard: if this clone is not actually shallow the test proves nothing.
+    depth = subprocess.run(
+        ["git", "-C", str(shallow), "rev-parse", "--is-shallow-repository"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert depth == "true", "expected a shallow clone"
+
+    r = client.post("/api/projects", json={"path": str(shallow / "src"), "lang": "python"})
+    project_id = r.json()["id"]
+    r = client.get(f"/api/projects/{project_id}/git-info")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["is_git"] is True
+    assert body["head_sha"]
+    assert body["head_subject"] == "second commit"
+    # The parent is referenced by HEAD, so its hash is known even though the
+    # object is absent; the subject is what degrades.
+    assert body["parent_sha"]
+    assert body["parent_subject"] is None
+
+
+def test_diff_against_unavailable_history_is_a_client_error(
+    client: TestClient, tmp_path
+) -> None:
+    """Asking to diff a ref whose objects were never fetched is a 400, not a 500.
+
+    Anyone running `cdec serve` inside a shallow clone hits this from the
+    quick-diff card, so it has to fail with an explanation rather than a
+    stack trace.
+    """
+    origin = tmp_path / "o"
+    (origin / "src").mkdir(parents=True)
+    subprocess.run(["git", "-C", str(origin), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(origin), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(origin), "config", "user.name", "Test"], check=True)
+    for n in ("one", "two"):
+        (origin / "src" / "m.py").write_text(f"class {n.title()}:\n    pass\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(origin), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(origin), "commit", "-qm", n], check=True)
+
+    shallow = tmp_path / "s"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", origin.as_uri(), str(shallow)], check=True
+    )
+
+    r = client.post("/api/projects", json={"path": str(shallow / "src"), "lang": "python"})
+    project_id = r.json()["id"]
+    r = client.post(
+        f"/api/projects/{project_id}/diff",
+        json={"old_ref": "HEAD~1", "new_ref": "HEAD", "subpath": ""},
+    )
+
+    assert r.status_code == 400, r.text
+    assert "unshallow" in r.json()["detail"]
