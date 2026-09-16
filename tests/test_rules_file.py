@@ -303,3 +303,183 @@ def test_the_ledgers_share_the_file_without_colliding(rules_file):
 
     doc = yaml.safe_load(rules_file.read_text(encoding="utf-8"))
     assert doc["exceptions"] and doc["locks"] and doc["rules"]
+
+
+
+# ---------------------------------------------------------------------------
+# `.cdec/rules/` — the second layout, and why the two never mix
+# ---------------------------------------------------------------------------
+
+SETTINGS_ONLY = "language: python\nsource: src\n"
+
+DANGLING = (
+    "rules:\n"
+    "  - id: no-dangling\n"
+    "    type: dangling-classes\n"
+    "    severity: error\n"
+)
+
+FANOUT = (
+    "rules:\n"
+    "  - id: fanout\n"
+    "    type: max-class-fanout\n"
+    "    severity: warning\n"
+    "    limit: 5\n"
+)
+
+
+def _folder_file(config_dir: Path, name: str, body: str) -> Path:
+    folder = config_dir / "rules"
+    folder.mkdir(exist_ok=True)
+    path = folder / name
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _drop_rules_list(config_dir: Path) -> None:
+    """Leave rules.yaml holding the settings only — the folder layout."""
+    (config_dir / "rules.yaml").write_text(SETTINGS_ONLY, encoding="utf-8")
+
+
+def test_a_project_with_only_rules_yaml_still_works(rules_file):
+    """The original layout is untouched: no folder, no change."""
+    assert [r.rule_id for r in load_rules(rules_file.parent).rules] == ["domain-is-pure"]
+
+
+def test_the_folder_is_the_other_layout(rules_file):
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "b_fanout.yaml", FANOUT)
+    _folder_file(config_dir, "a_dangling.yml", DANGLING)
+
+    # Name order, so the report reads the same on every machine. The settings
+    # still come from rules.yaml.
+    assert [r.rule_id for r in load_rules(config_dir).rules] == ["no-dangling", "fanout"]
+    assert load_project_config(config_dir).language == "python"
+
+
+def test_rules_in_both_places_are_refused(rules_file):
+    """Two populated layouts have no answer to "which rules apply".
+
+    Picking one would silently drop the other set of laws, which is the one
+    failure mode a gate must never have.
+    """
+    config_dir = rules_file.parent
+    _folder_file(config_dir, "shape.yaml", DANGLING)
+    with pytest.raises(ConfigError) as exc:
+        load_rules(config_dir)
+    # The message names both places and says how to resolve it.
+    assert "two places" in str(exc.value)
+    assert "shape.yaml" in str(exc.value)
+    assert "rules.yaml" in str(exc.value)
+
+
+def test_an_empty_rules_list_is_not_a_second_layout(rules_file):
+    """`cdec init` scaffolds `rules: []`; adding a folder file must just work."""
+    config_dir = rules_file.parent
+    (config_dir / "rules.yaml").write_text(SETTINGS_ONLY + "rules: []\n", encoding="utf-8")
+    _folder_file(config_dir, "shape.yaml", DANGLING)
+    assert [r.rule_id for r in load_rules(config_dir).rules] == ["no-dangling"]
+
+
+def test_an_empty_folder_leaves_rules_yaml_in_charge(rules_file):
+    """`cdec init` scaffolds the folder empty, and a README is just as likely."""
+    config_dir = rules_file.parent
+    _folder_file(config_dir, ".gitkeep", "")
+    _folder_file(config_dir, "README.md", "# how we split our rules\n")
+    assert [r.rule_id for r in load_rules(config_dir).rules] == ["domain-is-pure"]
+
+
+def test_a_subset_runs_only_the_named_files(rules_file):
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "dangling.yaml", DANGLING)
+    _folder_file(config_dir, "fanout.yaml", FANOUT)
+
+    # The name resolves with or without the extension, and order follows the
+    # selection.
+    assert [r.rule_id for r in load_rules(config_dir, ["dangling"]).rules] == ["no-dangling"]
+    assert [r.rule_id for r in load_rules(config_dir, ["fanout.yaml"]).rules] == ["fanout"]
+    assert [r.rule_id for r in load_rules(config_dir, ["fanout", "dangling"]).rules] == [
+        "fanout",
+        "no-dangling",
+    ]
+
+
+def test_a_subset_of_one_is_allowed_in_the_single_file_layout(rules_file):
+    """`-R rules.yaml` is a no-op there, not an error — scripts stay uniform."""
+    assert [r.rule_id for r in load_rules(rules_file.parent, ["rules.yaml"]).rules] == [
+        "domain-is-pure"
+    ]
+
+
+def test_an_unknown_rules_file_lists_the_real_ones(rules_file):
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "dangling.yaml", DANGLING)
+    with pytest.raises(ConfigError, match="dangling.yaml"):
+        load_rules(config_dir, ["typo"])
+
+
+def test_rules_yaml_is_not_selectable_in_the_folder_layout(rules_file):
+    """It holds no rules there, so naming it would silently check nothing."""
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "dangling.yaml", DANGLING)
+    with pytest.raises(ConfigError, match="no rule file named"):
+        load_rules(config_dir, ["rules.yaml"])
+
+
+def test_a_file_without_a_rules_list_is_rejected(rules_file):
+    """A folder file that is not a rule document must say so.
+
+    Loading nothing out of it would look exactly like a clean run.
+    """
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "notes.yaml", "# just a note\nfoo: bar\n")
+    with pytest.raises(ConfigError, match="needs a top-level 'rules:' list"):
+        load_rules(config_dir)
+
+
+def test_settings_in_a_folder_file_are_rejected(rules_file):
+    """Settings and the managed sections belong to rules.yaml only.
+
+    The tool writes `exceptions:` and `locks:` into rules.yaml, so honouring
+    them here would be a promise the writer does not keep.
+    """
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "extra.yaml", DANGLING + "language: csharp\n")
+    with pytest.raises(ConfigError, match="only 'rules:' is allowed"):
+        load_rules(config_dir)
+
+    _folder_file(config_dir, "extra.yaml", DANGLING + "exceptions: []\n")
+    with pytest.raises(ConfigError, match="only 'rules:' is allowed"):
+        load_rules(config_dir)
+
+
+def test_a_duplicate_id_across_files_is_rejected(rules_file):
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "one.yaml", DANGLING)
+    _folder_file(config_dir, "two.yaml", DANGLING)
+    with pytest.raises(ConfigError, match="duplicate rule id"):
+        load_rules(config_dir)
+
+
+def test_exceptions_still_land_in_rules_yaml_in_the_folder_layout(rules_file):
+    """The tool writes one file, whichever layout the rules use."""
+    config_dir = rules_file.parent
+    _drop_rules_list(config_dir)
+    _folder_file(config_dir, "shape.yaml", DANGLING)
+
+    store = load_waivers(config_dir)
+    store.add(Waiver(engine="check", rule="no-dangling", qualified_name="app.Thing",
+                     detail="", reason="agreed"))
+    save_waivers(config_dir, store)
+
+    assert read_section(config_dir / "rules.yaml", "exceptions")
+    assert not (config_dir / "rules" / "shape.yaml").read_text(
+        encoding="utf-8"
+    ).count("exceptions")

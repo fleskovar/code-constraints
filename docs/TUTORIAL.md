@@ -257,10 +257,18 @@ This scaffolds:
 ```
 .cdec/
   rules.yaml       everything: settings, rules, exceptions, lock digests
+  rules/           the other place rules can live (*.yaml), empty to start with
   reference.xmi    a snapshot of the architecture as it is right now
   README.md        a short in-repo explainer
   .gitignore       ignores cache/
 ```
+
+**Where the rules live.** By default, in the `rules:` list in `rules.yaml`. When you want
+to run cheap checks on every commit and slow ones before a release, move them into
+`.cdec/rules/*.yaml` instead — one top-level `rules:` list per file, nothing else in it.
+`cdec check` then runs every file in the folder, and `cdec check --rules-file fast` runs
+`.cdec/rules/fast.yaml` on its own. Use one layout or the other: laws in both places fail
+the run. Settings, `exceptions:` and `locks:` always stay in `rules.yaml`.
 
 **Commit everything except `cache/`.** The `.cdec/` folder is the contract; it belongs in
 version control so the whole team and CI share it.

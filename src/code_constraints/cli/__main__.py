@@ -330,6 +330,14 @@ def check(
     lang: Optional[str] = typer.Option(
         None, "--lang", help="Override the language from rules.yaml."
     ),
+    rules_file: list[str] = typer.Option(
+        [], "--rules-file", "-R", metavar="NAME",
+        help=(
+            "Run only the rules in these files from `.cdec/rules/` (name, with "
+            "or without the .yaml). Default: rules.yaml plus every file in "
+            "`.cdec/rules/`. Repeatable or comma-separated."
+        ),
+    ),
     base_ref: Optional[str] = typer.Option(
         None, "--base-ref", help="Git ref to use as the diff baseline (parsed live)."
     ),
@@ -368,6 +376,9 @@ def check(
 ) -> None:
     """Check the project against every rule in `.cdec/rules.yaml`.
 
+    Rules may also be split across `.cdec/rules/*.yaml`; all of them run by
+    default, and `--rules-file` narrows the run to the files you name.
+
     This is the whole gate. Configured architectural rules, source-tag
     conformance, implementation locks and the reference-architecture gate are
     all rule types in that one file, so there is one command to run, one report
@@ -386,7 +397,8 @@ def check(
     language = lang or cfg.language
     if language not in SUPPORTED_LANGUAGES:
         raise typer.BadParameter(f"unsupported language: {language}")
-    loaded = _load_rules_cli(config_dir)
+    selected = _split_csv(rules_file)
+    loaded = _load_rules_cli(config_dir, selected)
     _warn_about_legacy_files(config_dir)
 
     from code_constraints.lint.engine import SourceContext
@@ -1311,10 +1323,15 @@ def _load_config_cli(config_dir: Path):
         raise typer.Exit(code=2) from exc
 
 
-def _load_rules_cli(config_dir: Path):
+def _split_csv(values: list[str]) -> list[str]:
+    """Flatten a repeatable, comma-separated option into a list of names."""
+    return [part.strip() for raw in values for part in str(raw).split(",") if part.strip()]
+
+
+def _load_rules_cli(config_dir: Path, only: list[str] | None = None):
     """`load_rules` with typer-friendly error reporting."""
     try:
-        return load_rules(config_dir)
+        return load_rules(config_dir, only)
     except ConfigError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc

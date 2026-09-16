@@ -5,6 +5,14 @@ list that says *which laws apply*, and (in the tool-managed tail, see
 `code_constraints.core.rulesdoc`) the exceptions granted and the digests of
 frozen implementations.
 
+A project can instead split its laws across `.cdec/rules/*.yaml`. Those files
+carry `rules:` and nothing else — settings, exceptions and locks stay in
+`rules.yaml`, which is the only file the tool writes. The two layouts are
+alternatives: rules come from the folder, or from the `rules:` list in
+`rules.yaml`, never from both. `cdec check --rules-file NAME` then loads only
+the documents you name, so a cheap subset can gate every commit and the full set
+can gate the release.
+
 `.cdec/config.yaml` is the legacy home of the settings. It is still read when it
 exists, so a project scaffolded by an older `cdec init` keeps working, but
 `rules.yaml` wins key by key and `cdec init --migrate` folds the old file in.
@@ -12,6 +20,7 @@ exists, so a project scaffolded by an older `cdec init` keeps working, but
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,14 +43,22 @@ __all__ = [
     "LoadedRules",
     "ProjectConfig",
     "REFERENCE_FILENAME",
+    "RULES_DIRNAME",
     "RULES_FILENAME",
+    "available_rule_files",
     "legacy_files",
     "load_project_config",
     "load_rules",
+    "rule_files",
+    "rules_dir",
     "rules_path",
 ]
 
 CONFIG_FILENAME = "config.yaml"  # legacy; superseded by rules.yaml
+#: The alternative to a `rules:` list in rules.yaml: a folder of rule
+#: documents, each holding a `rules:` list and nothing else.
+RULES_DIRNAME = "rules"
+_RULE_SUFFIXES = (".yaml", ".yml")
 REFERENCE_FILENAME = "reference.xmi"
 # Legacy ledgers, folded into rules.yaml by `cdec init --migrate`. Still read
 # when present so an existing project doesn't break on upgrade.
@@ -83,6 +100,78 @@ class LoadedRules:
 
 def rules_path(config_dir: Path) -> Path:
     return config_dir / RULES_FILENAME
+
+
+def rules_dir(config_dir: Path) -> Path:
+    return config_dir / RULES_DIRNAME
+
+
+def rule_files(config_dir: Path, only: Sequence[str] | None = None) -> list[Path]:
+    """Every rule document to load, in load order.
+
+    A project declares its laws in **one** of two layouts, never both:
+
+    * the `rules:` list inside `rules.yaml` — the original layout, and still the
+      right one for a project with a handful of laws;
+    * one or more `rules/*.yaml` files, each holding a `rules:` list and nothing
+      else, loaded in name order.
+
+    With a selection, only the named documents load, in the order given. A name
+    matches a file name or its stem, so `-R quick` finds `rules/quick.yaml`.
+    """
+    available = available_rule_files(config_dir)
+    if only:
+        return [_resolve_rule_file(config_dir, name, available) for name in only]
+    return available
+
+
+def available_rule_files(config_dir: Path) -> list[Path]:
+    """The documents this project's layout says hold the rules.
+
+    Raises when both layouts are populated. The two are alternatives, so a
+    project with rules in both places has no answer to "which ones apply" — and
+    guessing one would silently drop the other set of laws.
+    """
+    folder = rules_dir(config_dir)
+    folder_files = (
+        sorted(p for p in folder.iterdir() if p.is_file() and p.suffix in _RULE_SUFFIXES)
+        if folder.is_dir()
+        else []
+    )
+    root = config_dir / RULES_FILENAME
+    if not folder_files:
+        return [root] if root.is_file() else []
+
+    if _declares_rules(root):
+        names = ", ".join(p.name for p in folder_files)
+        raise ConfigError(
+            f"{config_dir}: rules are declared in two places. Remove the 'rules:' "
+            f"list from {RULES_FILENAME} (move it into {RULES_DIRNAME}/), or delete "
+            f"{RULES_DIRNAME}/ ({names}). Settings, exceptions and locks stay in "
+            f"{RULES_FILENAME} either way."
+        )
+    return folder_files
+
+
+def _declares_rules(path: Path) -> bool:
+    """True when `rules.yaml` carries laws of its own. An empty or absent
+    `rules:` list is not a second layout — it is a file that defers."""
+    try:
+        return bool(load_document(path).get("rules"))
+    except RulesFileError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _resolve_rule_file(config_dir: Path, name: str, available: list[Path]) -> Path:
+    """One `--rules-file` name, resolved against the documents that apply."""
+    wanted = Path(name).name
+    for path in available:
+        if wanted in (path.name, path.stem):
+            return path
+    listed = ", ".join(p.name for p in available) or "none"
+    raise ConfigError(
+        f"no rule file named {name!r} in {config_dir}. Available: {listed}"
+    )
 
 
 def legacy_files(config_dir: Path) -> list[Path]:
@@ -156,28 +245,63 @@ def _load_legacy_settings(path: Path) -> dict[str, Any]:
     return {k: v for k, v in raw.items() if k != "lock"}
 
 
-def load_rules(config_dir: Path) -> LoadedRules:
-    """Build the rule objects from the `rules:` list."""
-    path = config_dir / RULES_FILENAME
-    if not path.is_file():
-        # A project still on the legacy layout may have no rules.yaml at all.
-        raise ConfigError(f"missing {path}. Run `cdec init` to scaffold it.")
+def load_rules(config_dir: Path, only: Sequence[str] | None = None) -> LoadedRules:
+    """Build the rule objects from every selected document's `rules:` list.
+
+    `only` names the documents to read (see `rule_files`); without it every rule
+    document the project's layout declares is read. Rule ids stay unique across
+    files: a duplicate is an error, because two entries of one id would report
+    under one heading and share every exception key.
+    """
+    files = rule_files(config_dir, only)
+    if not files:
+        # Neither layout is present: no rules.yaml and no populated rules/.
+        raise ConfigError(
+            f"missing {config_dir / RULES_FILENAME}. Run `cdec init` to scaffold it."
+        )
+
+    out: list[Rule] = []
+    seen_ids: set[str] = set()
+    for path in files:
+        for i, entry in enumerate(_rule_entries(config_dir, path)):
+            rule = _build_rule(path, i, entry, seen_ids)
+            if rule is not None:
+                out.append(rule)
+    return LoadedRules(rules=out)
+
+
+def _rule_entries(config_dir: Path, path: Path) -> list[Any]:
+    """The `rules:` list of one document, after the format check."""
     try:
         raw = load_document(path)
     except RulesFileError as exc:
         raise ConfigError(str(exc)) from exc
-
+    if path != config_dir / RULES_FILENAME:
+        _validate_folder_document(path, raw)
     entries = raw.get("rules") or []
     if not isinstance(entries, list):
         raise ConfigError(f"{path}: 'rules' must be a list")
+    return entries
 
-    out: list[Rule] = []
-    seen_ids: set[str] = set()
-    for i, entry in enumerate(entries):
-        rule = _build_rule(path, i, entry, seen_ids)
-        if rule is not None:
-            out.append(rule)
-    return LoadedRules(rules=out)
+
+def _validate_folder_document(path: Path, raw: dict[str, Any]) -> None:
+    """A file under `.cdec/rules/` carries laws and nothing else.
+
+    Settings, `exceptions:` and `locks:` belong to `rules.yaml` — the tool
+    writes only that file, so honouring them here would be a promise the writer
+    does not keep. Say so instead of ignoring them.
+    """
+    if "rules" not in raw:
+        raise ConfigError(
+            f"{path}: not a rule file. It needs a top-level 'rules:' list."
+        )
+    extra = sorted(set(raw) - {"rules"})
+    if extra:
+        raise ConfigError(
+            f"{path}: only 'rules:' is allowed in {RULES_DIRNAME}/; found "
+            f"{', '.join(extra)}. Settings, exceptions and locks stay in "
+            f"{RULES_FILENAME}."
+        )
 
 
 def _build_rule(

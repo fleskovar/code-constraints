@@ -80,6 +80,9 @@ def test_init_creates_one_rules_file(project_dir):
     assert (cdec / "rules.yaml").is_file()
     assert (cdec / "reference.xmi").is_file()
     assert (cdec / "README.md").is_file()
+    # ...plus the folder extra rule files go in. Scaffolded empty, so the split
+    # is discoverable before anybody needs it.
+    assert (cdec / "rules").is_dir()
     # The per-concern files are gone: settings, rules, exceptions and locks all
     # live in rules.yaml, which is the point of the layout.
     assert not (cdec / "config.yaml").exists()
@@ -445,3 +448,109 @@ def test_a_legacy_layout_still_checks_without_migrating(project_dir):
     result = _run(["check"], cwd=project_dir)
     assert result.exit_code == 0, result.output
     assert "cdec init --migrate" in result.output
+
+
+# ---------------------------------------------------------------------------
+# The two rule layouts: `rules:` in rules.yaml, or `.cdec/rules/*.yaml`
+# ---------------------------------------------------------------------------
+
+DANGLING_RULES = (
+    "rules:\n"
+    "  - id: no-dangling\n"
+    "    type: dangling-classes\n"
+    "    severity: error\n"
+)
+
+FANOUT_RULES = (
+    "rules:\n"
+    "  - id: fanout\n"
+    "    type: max-class-fanout\n"
+    "    severity: error\n"
+    "    limit: 0\n"
+)
+
+
+def _folder_project(project_dir: Path) -> Path:
+    """An initialised project whose laws sit in two files under `.cdec/rules/`."""
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    config_dir = project_dir / ".cdec"
+    _set_rules(config_dir, "")  # settings only: the folder holds the laws
+    folder = config_dir / "rules"
+    folder.mkdir(exist_ok=True)
+    (folder / "shape.yaml").write_text(DANGLING_RULES, encoding="utf-8")
+    (folder / "size.yaml").write_text(FANOUT_RULES, encoding="utf-8")
+    return config_dir
+
+
+def _violated_rules(result) -> set:
+    return {v["rule_id"] for v in json.loads(result.output)["violations"]}
+
+
+def test_check_runs_every_file_in_the_rules_folder(project_dir):
+    _folder_project(project_dir)
+    result = _run(["check", "--format", "json"], cwd=project_dir)
+    assert _violated_rules(result) == {"fanout", "no-dangling"}
+    assert result.exit_code == 1, result.output
+
+
+def test_a_single_rules_yaml_still_runs_on_its_own(project_dir):
+    """The original layout is the whole gate for a project that never splits."""
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    _set_rules(project_dir / ".cdec", FANOUT_RULES)
+    result = _run(["check", "--format", "json"], cwd=project_dir)
+    assert _violated_rules(result) == {"fanout"}
+
+
+def test_rules_in_both_layouts_fail_the_run(project_dir):
+    """The two are alternatives. Running one and ignoring the other silently
+    would drop laws the team committed."""
+    config_dir = _folder_project(project_dir)
+    _set_rules(config_dir, FANOUT_RULES)  # now declared in both places
+    result = _run(["check"], cwd=project_dir)
+    assert result.exit_code == 2
+    assert "two places" in result.output
+
+
+def test_rules_file_flag_runs_only_that_file(project_dir):
+    _folder_project(project_dir)
+    assert _violated_rules(
+        _run(["check", "--format", "json", "--rules-file", "shape"], cwd=project_dir)
+    ) == {"no-dangling"}
+    # Short form, and the name resolves with the extension too.
+    assert _violated_rules(
+        _run(["check", "--format", "json", "-R", "size.yaml"], cwd=project_dir)
+    ) == {"fanout"}
+    # Several at once, comma-separated.
+    assert _violated_rules(
+        _run(["check", "--format", "json", "-R", "shape,size"], cwd=project_dir)
+    ) == {"fanout", "no-dangling"}
+
+
+def test_exception_keys_survive_running_a_subset(project_dir):
+    """A key names the issue, not the file its rule was configured in.
+
+    Accepting something during a full run has to keep it accepted during the
+    cheap run, or the two gates disagree about what is already decided.
+    """
+    _folder_project(project_dir)
+    full = _run(["check", "--format", "json"], cwd=project_dir)
+    subset = _run(["check", "--format", "json", "-R", "shape"], cwd=project_dir)
+    shape_keys = {v["key"] for v in json.loads(subset.output)["violations"]}
+    assert shape_keys
+    assert shape_keys < {v["key"] for v in json.loads(full.output)["violations"]}
+
+    key = min(shape_keys)
+    allowed = _run(["exceptions", "allow", key, "--reason", "agreed"], cwd=project_dir)
+    assert allowed.exit_code == 0, allowed.output
+    after = _run(["check", "--format", "json", "-R", "shape"], cwd=project_dir)
+    assert key not in {v["key"] for v in json.loads(after.output)["violations"]}
+    # ...and it was recorded in rules.yaml, the one file the tool writes.
+    assert key in (project_dir / ".cdec" / "rules.yaml").read_text(encoding="utf-8")
+
+
+def test_an_unknown_rules_file_fails_before_parsing(project_dir):
+    _folder_project(project_dir)
+    result = _run(["check", "--rules-file", "typo"], cwd=project_dir)
+    assert result.exit_code == 2
+    assert "typo" in result.output
+    assert "shape.yaml" in result.output  # it lists what does exist

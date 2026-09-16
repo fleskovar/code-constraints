@@ -17,6 +17,7 @@ from code_constraints.lint.config import (
     CONFIG_FILENAME,
     LOCKS_FILENAME,
     REFERENCE_FILENAME,
+    RULES_DIRNAME,
 )
 
 SUPPORTED_LANGS = SUPPORTED_LANGUAGES
@@ -134,6 +135,16 @@ def init_cdec_config(
             raise ScaffoldError(f"refusing to overwrite {path} (use force)")
         path.write_text(content, encoding="utf-8")
         written.append(path)
+
+    # The folder for the other rule layout. Scaffolded empty, so it changes
+    # nothing until a file lands in it: the rules then come from the folder
+    # instead of the `rules:` list above, and `--rules-file` can run a subset.
+    extra_rules = config_dir / RULES_DIRNAME
+    extra_rules.mkdir(exist_ok=True)
+    keep = extra_rules / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
+        written.append(keep)
 
     gitignore = config_dir / ".gitignore"
     gitignore.write_text("cache/\n", encoding="utf-8")
@@ -406,6 +417,11 @@ output:
 #               resentment.
 #   ignore    — list of qualified-name globs to exempt
 #
+# The rules can live here, or in `.cdec/rules/*.yaml` (one `rules:` list per
+# file), but not in both — a project with laws in two places fails the run.
+# With the folder, `cdec check` runs every file in it and
+# `cdec check --rules-file NAME` runs a subset.
+#
 # `cdec check` is opt-in — an empty list enforces nothing. Add laws one at a
 # time, as the team agrees on them.
 #
@@ -495,6 +511,7 @@ Two files, and one command that reads them.
 | File | What it is |
 |---|---|
 | `rules.yaml` | Settings, the rules enforced, the exceptions granted, and the digests of frozen implementations. Commit it. |
+| `rules/` | The other way to hold the rules: one or more `*.yaml` files, each with a `rules:` list and nothing else. Use this **or** the `rules:` list in `rules.yaml`, never both. Commit them. |
 | `reference.xmi` | A snapshot of the architecture, used as the baseline for `scope: diff` rules and by the `reference-architecture` rule. Commit it. |
 | `cache/` | Transient parse artefacts. Gitignored. |
 
@@ -502,7 +519,33 @@ Two files, and one command that reads them.
 cdec check
 ```
 
-That is the whole gate. Architectural rules, source-tag conformance,
+That is the whole gate.
+
+## Two ways to hold the rules
+
+Keep every law in the `rules:` list in `rules.yaml`. That is the default and it
+stays valid forever.
+
+Or split them across `rules/*.yaml`, one `rules:` list per file and nothing else
+in it — useful when some checks are cheap enough for every commit and others
+belong before a release:
+
+```
+.cdec/rules/fast.yaml      # cheap checks, run on every commit
+.cdec/rules/release.yaml   # the slow ones, run before a release
+```
+
+```
+cdec check                 # every file in rules/
+cdec check --rules-file fast
+cdec check -R fast -R release
+```
+
+**Pick one.** If `rules.yaml` has a `rules:` list and `rules/` has files, the run
+fails and tells you so — running one set and ignoring the other would silently
+drop laws you committed. Settings, `exceptions:` and `locks:` stay in
+`rules.yaml` either way, because that is the only file the tool writes. Rule ids
+stay unique across all the files. Architectural rules, source-tag conformance,
 implementation locks and the reference gate are all rule types in `rules.yaml`,
 so there is one command to run in CI and one exit code to read.
 

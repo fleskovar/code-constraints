@@ -265,7 +265,8 @@ Runs every rule in `.cdec/rules.yaml` and exits non-zero when violations remain 
 what it actually does.
 
 ```
-cdec check [--config .cdec] [--source DIR] [--lang L] [--reference MODEL] [--base-ref REF] \
+cdec check [--config .cdec] [--source DIR] [--lang L] [--rules-file NAME] \
+           [--reference MODEL] [--base-ref REF] \
            [--repo .] [--fail-on error|warning|none] [--format human|json] \
            [--json-out FILE] [--log-out FILE] \
            [--automatic-exceptions WHAT] [--force] \
@@ -277,6 +278,7 @@ cdec check [--config .cdec] [--source DIR] [--lang L] [--reference MODEL] [--bas
 | `--config` | `.cdec` | Folder holding `rules.yaml`. |
 | `--source` | from `rules.yaml` | Override the source tree. |
 | `--lang` | from `rules.yaml` | Override the language. |
+| `--rules-file` | all of them | Run only the rules in these files from `.cdec/rules/`. Repeatable, or comma-separated. Short form `-R`. Needs the folder layout — see below. |
 | `--reference` | from `rules.yaml` / `.cdec/reference.xmi` | Baseline model for `scope: diff` rules and for `reference-architecture`. |
 | `--base-ref` | — | Use a git ref as the baseline instead of a stored model (parsed live). Wins over `--reference`. |
 | `--repo` | `.` | Git repo root (only used with `--base-ref`). |
@@ -293,6 +295,42 @@ Baseline resolution order: `--base-ref` → `--reference` → the `reference:` s
 `rules.yaml` → `.cdec/reference.xmi`. Rules declared `scope: diff` are **skipped** (not
 failed) when no baseline is available, and the report says so — a rule that could not run
 must never look like one that passed.
+
+#### Two rule layouts, and `--rules-file`
+
+A project declares its laws in one of two layouts:
+
+| Layout | Where the rules are | When to use it |
+|---|---|---|
+| single file | the `rules:` list in `.cdec/rules.yaml` | the default; fine for any number of laws |
+| folder | `.cdec/rules/*.yaml`, one `rules:` list per file | when you want to run a subset: cheap checks per commit, the full set per release |
+
+**The two never mix.** If `rules.yaml` declares a `rules:` list *and* `.cdec/rules/` holds
+rule files, `cdec check` exits 2 and says so. Running one set and ignoring the other would
+silently drop laws the team committed. An empty `rules:` list, or an empty folder, is not a
+second layout — `cdec init` scaffolds both, and the project stays on the single file until
+the first file lands in the folder.
+
+Settings, `exceptions:` and `locks:` stay in `rules.yaml` in both layouts, because that is
+the only file the tool writes. A file in the folder that carries anything but `rules:` is
+rejected by name rather than ignored. So is one with no `rules:` list at all — a rule set
+that did not load must never look like one that passed. Rule ids stay unique across files.
+
+`--rules-file` picks documents out of the folder layout:
+
+```bash
+cdec check                          # every file in .cdec/rules/
+cdec check --rules-file fast        # only .cdec/rules/fast.yaml
+cdec check -R fast -R release       # two of them
+cdec check -R fast,release          # the same, comma-separated
+```
+
+A name resolves with or without the `.yaml`. An unknown name fails the run and lists the
+files that do exist.
+
+Exception keys do not change with the selection. A key is derived from the identity of the
+issue, never from the file its rule was configured in, so a violation accepted during a
+full run stays accepted during a subset run.
 
 #### `--automatic-exceptions` — accepting the current state
 
