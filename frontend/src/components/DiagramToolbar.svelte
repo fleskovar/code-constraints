@@ -8,6 +8,7 @@
     collapseReveal,
     canCollapse,
     requestRelayout,
+    type RevealVia,
   } from "../lib/state/diagram.svelte";
   import { openLayers } from "../lib/state/layers.svelte";
   import { openEdgeFocus } from "../lib/state/edgeFocus.svelte";
@@ -17,6 +18,29 @@
   // "other" and the toolbar renders nothing.
   let { kind, xmi }: { kind: "class" | "package" | "other"; xmi: XmiInfo } =
     $props();
+
+  // What Show all / Hide all act on. "all" = the classes (and, for Show all,
+  // every line); the edge kinds only toggle those lines and keep the classes.
+  let scope = $state<RevealVia>("all");
+
+  function setAll(on: boolean) {
+    if (kind !== "class" || scope === "all") {
+      if (on) {
+        showAll();
+        diagramState.showInheritanceEdges = true;
+        diagramState.showReferenceEdges = true;
+      } else hideAll();
+    } else if (scope === "inheritance") diagramState.showInheritanceEdges = on;
+    else diagramState.showReferenceEdges = on;
+  }
+
+  const scopeLabel = $derived(
+    kind !== "class" || scope === "all"
+      ? "every element"
+      : scope === "inheritance"
+        ? "every inheritance line"
+        : "every reference line",
+  );
 
   const hasSelection = $derived(diagramState.selectedClassId !== null);
   const hasEdgeSelection = $derived(diagramState.selectedEdgeId !== null);
@@ -72,13 +96,32 @@
               <input type="checkbox" bind:checked={diagramState.showOperations} />
               Methods
             </label>
+            <label>
+              <input type="checkbox" bind:checked={diagramState.showInheritanceEdges} />
+              Inheritance lines
+            </label>
+            <label>
+              <input type="checkbox" bind:checked={diagramState.showReferenceEdges} />
+              Reference lines
+            </label>
           </div>
         </details>
       </div>
     {/if}
     <div class="group">
-      <button onclick={showAll} title="Show every element">Show all</button>
-      <button onclick={hideAll} title="Hide every element">Hide all</button>
+      {#if kind === "class"}
+        <select
+          class="scope"
+          bind:value={scope}
+          title="What Show all / Hide all act on: the classes, or only one kind of relationship line"
+        >
+          <option value="all">Everything</option>
+          <option value="inheritance">Inheritance</option>
+          <option value="association">References</option>
+        </select>
+      {/if}
+      <button onclick={() => setAll(true)} title="Show {scopeLabel}">Show all</button>
+      <button onclick={() => setAll(false)} title="Hide {scopeLabel}">Hide all</button>
     </div>
     <div class="group">
       <button
@@ -224,7 +267,8 @@
     font-size: 0.75rem;
     color: var(--muted);
   }
-  .via select {
+  .via select,
+  select.scope {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 4px;

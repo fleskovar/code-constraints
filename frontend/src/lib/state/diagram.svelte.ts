@@ -41,6 +41,9 @@ export interface DiagramState {
   /** Member compartments drawn on class nodes (the "Display" menu). */
   showAttributes: boolean;
   showOperations: boolean;
+  /** Relationship lines drawn on the class canvas, per edge kind. */
+  showInheritanceEdges: boolean;
+  showReferenceEdges: boolean;
   /** Whether the kind-colour legend overlay is expanded. */
   legendOpen: boolean;
   /** Qualified class names a deep link (?focus=A,B) or a pushed proposal asked
@@ -87,6 +90,8 @@ export const diagramState: DiagramState = $state({
   lodTier: "full" as LodTier,
   showAttributes: true,
   showOperations: true,
+  showInheritanceEdges: true,
+  showReferenceEdges: true,
   legendOpen: true,
   pendingFocusQnames: null as string[] | null,
 });

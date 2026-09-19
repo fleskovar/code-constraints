@@ -115,9 +115,13 @@
       edges = [];
       return;
     }
-    const visibleE = allEdges.filter(
-      (e) => visibleIds.has(e.source) && visibleIds.has(e.target),
-    );
+    const hideInh = !diagramState.showInheritanceEdges;
+    const hideRef = !diagramState.showReferenceEdges;
+    const visibleE = allEdges.filter((e) => {
+      const inheritance = e.data?.kind === "inheritance";
+      if (inheritance ? hideInh : hideRef) return false;
+      return visibleIds.has(e.source) && visibleIds.has(e.target);
+    });
     // Overlay the selected-edge highlight so clicking an edge restyles it
     // reactively without touching the base `allEdges`.
     const selEdge = diagramState.selectedEdgeId;
@@ -187,6 +191,7 @@
             source: inheritance ? e.target : e.source,
             target: inheritance ? e.source : e.target,
             label: e.multiplicity || undefined,
+            data: { kind: e.kind },
             // UML generalization: a hollow triangle at the base end (start),
             // no marker at the derived end.
             markerStart: inheritance ? "uml-inheritance" : undefined,
