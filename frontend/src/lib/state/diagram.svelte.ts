@@ -10,6 +10,8 @@ import type { ClassGraphEdge } from "../api";
 export interface GraphEdge {
   source: string;
   target: string;
+  /** Class edges carry their kind so reveal can follow one kind only. */
+  kind?: "inheritance" | "association";
 }
 
 export interface DiagramState {
@@ -27,9 +29,11 @@ export interface DiagramState {
    *  `graph.edges`, NOT the render-swapped inheritance edges). Published by the
    *  active *DiagramFlow so the top toolbar can drive graph navigation. */
   currentEdges: GraphEdge[];
-  /** Batches of node ids added by progressive reveal, newest last, so Collapse
-   *  can undo one ring at a time. */
-  revealStack: string[][];
+  /** Rings of node ids added by progressive reveal, newest last, so Collapse
+   *  and the per-direction hide buttons can undo one ring at a time. */
+  revealStack: RevealRing[];
+  /** Which class edges progressive reveal follows. */
+  revealVia: RevealVia;
   /** Level-of-detail rendering: progressively simplify the canvas as you zoom
    *  out. Toggleable; `lodTier` is derived from the live zoom by the canvas. */
   lodEnabled: boolean;
@@ -50,6 +54,15 @@ export interface DiagramState {
  *  hidden (overview of base/standalone types only). */
 export type LodTier = "full" | "mid" | "far";
 
+export type RevealDirection = "up" | "down";
+export type RevealVia = "all" | "inheritance" | "association";
+
+/** One step of progressive reveal: the ids it added and which way it went. */
+export interface RevealRing {
+  direction: RevealDirection;
+  ids: string[];
+}
+
 const LOD_MID_BELOW = 0.55;
 const LOD_FAR_BELOW = 0.3;
 
@@ -68,7 +81,8 @@ export const diagramState: DiagramState = $state({
   nodePositions: new Map<string, { x: number; y: number }>(),
   relayoutToken: 0,
   currentEdges: [] as GraphEdge[],
-  revealStack: [] as string[][],
+  revealStack: [] as RevealRing[],
+  revealVia: "all" as RevealVia,
   lodEnabled: true,
   lodTier: "full" as LodTier,
   showAttributes: true,
@@ -182,14 +196,18 @@ export function focusOn(rootId: string): void {
 
 /** Grow the visible set by one directed ring around every currently-visible
  *  node. `down` follows source→target (dependencies / parents); `up` follows
- *  target→source (dependents / children). Newly-added ids are pushed onto
+ *  target→source (dependents / children). `revealVia` limits class edges to
+ *  one kind. Newly-added ids are pushed onto
  *  `revealStack` so Collapse can remove them. No-op while everything is shown
  *  (`visibleClassIds === null`). */
-export function reveal(direction: "up" | "down", edges: GraphEdge[]): void {
+export function reveal(direction: RevealDirection, edges: GraphEdge[]): void {
   const cur = diagramState.visibleClassIds;
   if (cur === null) return;
+  const via = diagramState.revealVia;
   const adj = new Map<string, Set<string>>();
   for (const e of edges) {
+    // Edges without a kind (package dependencies) are always followed.
+    if (via !== "all" && e.kind && e.kind !== via) continue;
     const from = direction === "down" ? e.source : e.target;
     const to = direction === "down" ? e.target : e.source;
     if (!adj.has(from)) adj.set(from, new Set());
@@ -206,26 +224,32 @@ export function reveal(direction: "up" | "down", edges: GraphEdge[]): void {
     }
   }
   if (added.length === 0) return;
-  diagramState.revealStack = [...diagramState.revealStack, added];
+  diagramState.revealStack = [...diagramState.revealStack, { direction, ids: added }];
   diagramState.visibleClassIds = next;
 }
 
-/** Undo the most recent reveal ring. Only removes ids that were added by that
- *  ring and aren't claimed by an earlier ring still on the stack. */
-export function collapseReveal(): void {
+/** Undo the most recent reveal ring, or the most recent ring of `direction`
+ *  when one is given (so "hide upstream" works after a later downstream step).
+ *  Only removes ids that no other ring still on the stack also added. */
+export function collapseReveal(direction?: RevealDirection): void {
   const stack = diagramState.revealStack;
-  if (stack.length === 0) return;
-  const last = stack[stack.length - 1];
-  const remaining = stack.slice(0, -1);
-  const kept = new Set<string>();
-  for (const batch of remaining) for (const id of batch) kept.add(id);
+  let at = stack.length - 1;
+  while (at >= 0 && direction && stack[at].direction !== direction) at--;
+  if (at < 0) return;
+  const remaining = stack.filter((_, i) => i !== at);
+  const kept = new Set(remaining.flatMap((r) => r.ids));
   const cur = diagramState.visibleClassIds;
   if (cur !== null) {
     const next = new Set(cur);
-    for (const id of last) if (!kept.has(id)) next.delete(id);
+    for (const id of stack[at].ids) if (!kept.has(id)) next.delete(id);
     diagramState.visibleClassIds = next;
   }
   diagramState.revealStack = remaining;
+}
+
+/** Whether a ring of `direction` (or any ring) can be hidden. */
+export function canCollapse(direction?: RevealDirection): boolean {
+  return diagramState.revealStack.some((r) => !direction || r.direction === direction);
 }
 
 export function setNodePosition(

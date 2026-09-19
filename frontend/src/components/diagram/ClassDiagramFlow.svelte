@@ -145,6 +145,7 @@
         diagramState.currentEdges = g.edges.map((e) => ({
           source: e.source,
           target: e.target,
+          kind: e.kind,
         }));
         const positions = layoutNodes(
           g.nodes.map((n) => ({

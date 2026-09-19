@@ -6,6 +6,7 @@
     focusOn,
     reveal,
     collapseReveal,
+    canCollapse,
     requestRelayout,
   } from "../lib/state/diagram.svelte";
   import { openLayers } from "../lib/state/layers.svelte";
@@ -19,7 +20,6 @@
 
   const hasSelection = $derived(diagramState.selectedClassId !== null);
   const hasEdgeSelection = $derived(diagramState.selectedEdgeId !== null);
-  const canCollapse = $derived(diagramState.revealStack.length > 0);
 
   // A native <details> does not close on an outside click, so close it here.
   let displayMenu = $state<HTMLDetailsElement | null>(null);
@@ -88,24 +88,56 @@
       >
         Focus
       </button>
+      {#if kind === "class"}
+        <label class="via" title="Which relationships upstream / downstream follow">
+          via
+          <select bind:value={diagramState.revealVia}>
+            <option value="all">All</option>
+            <option value="inheritance">Inheritance</option>
+            <option value="association">References</option>
+          </select>
+        </label>
+      {/if}
+      <span class="split">
+        <button
+          onclick={() => reveal("up", diagramState.currentEdges)}
+          disabled={!hasSelection}
+          title="Reveal one more ring of upstream neighbours (things that depend on the visible elements)"
+        >
+          ↑ upstream
+        </button>
+        <button
+          class="hide"
+          onclick={() => collapseReveal("up")}
+          disabled={!canCollapse("up")}
+          aria-label="Hide upstream ring"
+          title="Hide the most recently revealed upstream ring"
+        >
+          −
+        </button>
+      </span>
+      <span class="split">
+        <button
+          onclick={() => reveal("down", diagramState.currentEdges)}
+          disabled={!hasSelection}
+          title="Reveal one more ring of downstream neighbours (things the visible elements depend on)"
+        >
+          ↓ downstream
+        </button>
+        <button
+          class="hide"
+          onclick={() => collapseReveal("down")}
+          disabled={!canCollapse("down")}
+          aria-label="Hide downstream ring"
+          title="Hide the most recently revealed downstream ring"
+        >
+          −
+        </button>
+      </span>
       <button
-        onclick={() => reveal("up", diagramState.currentEdges)}
-        disabled={!hasSelection}
-        title="Reveal one more ring of upstream neighbours (things that depend on the visible elements)"
-      >
-        ↑ upstream
-      </button>
-      <button
-        onclick={() => reveal("down", diagramState.currentEdges)}
-        disabled={!hasSelection}
-        title="Reveal one more ring of downstream neighbours (things the visible elements depend on)"
-      >
-        ↓ downstream
-      </button>
-      <button
-        onclick={collapseReveal}
-        disabled={!canCollapse}
-        title="Hide the most recently revealed ring"
+        onclick={() => collapseReveal()}
+        disabled={!canCollapse()}
+        title="Hide the most recently revealed ring, in either direction"
       >
         Collapse
       </button>
@@ -184,6 +216,35 @@
   }
   .diagram-tools button:hover:not(:disabled) {
     background: var(--hover);
+  }
+  .via {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .via select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.3rem;
+    font-size: 0.8rem;
+    color: var(--fg);
+  }
+  /* Reveal + hide pair drawn as one joined control. */
+  .split {
+    display: inline-flex;
+  }
+  .split button:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .diagram-tools .split button.hide {
+    border-left: none;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding: 0.2rem 0.45rem;
   }
   .diagram-tools button:disabled {
     opacity: 0.45;
