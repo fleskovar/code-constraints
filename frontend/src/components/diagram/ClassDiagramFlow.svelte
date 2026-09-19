@@ -58,7 +58,9 @@
   const HEADER_HEIGHT = 40;
   const ROW_HEIGHT = 18;
   function estimateHeight(c: ClassGraphNode): number {
-    const rows = c.attributes.length + c.operations.length;
+    const rows =
+      (diagramState.showAttributes ? c.attributes.length : 0) +
+      (diagramState.showOperations ? c.operations.length : 0);
     return HEADER_HEIGHT + rows * ROW_HEIGHT + 16;
   }
 

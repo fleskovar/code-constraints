@@ -5,7 +5,11 @@
     type ClassGraphNode,
     type XmiInfo,
   } from "../../lib/api";
-  import { diagramState } from "../../lib/state/diagram.svelte";
+  import {
+    diagramState,
+    relatedClasses,
+    setSelected,
+  } from "../../lib/state/diagram.svelte";
   import CollapsibleSection from "./CollapsibleSection.svelte";
 
   let { xmi }: { xmi: XmiInfo } = $props();
@@ -28,9 +32,31 @@
   const selected = $derived(
     diagramState.selectedClassId ? byId.get(diagramState.selectedClassId) ?? null : null,
   );
+
+  const related = $derived.by(() => {
+    if (!graph || !selected) return [];
+    return relatedClasses(selected.id, graph.edges)
+      .map((r) => ({ ...r, node: byId.get(r.id) }))
+      .filter((r) => r.node);
+  });
+
+  // Collapsed to its title bar so it never has to cover the canvas.
+  let open = $state(true);
 </script>
 
-<div class="panel">
+<div class="inspector" class:open>
+  <button
+    type="button"
+    class="head"
+    aria-expanded={open}
+    title={open ? "Collapse the inspector" : "Expand the inspector"}
+    onclick={() => (open = !open)}
+  >
+    <span>{selected ? selected.name : "Inspector"}</span>
+    <span class="caret">{open ? "▾" : "▸"}</span>
+  </button>
+  {#if open}
+  <div class="body">
   <CollapsibleSection title="Details">
   {#if !selected}
     <p class="placeholder">Select a class to see details.</p>
@@ -84,13 +110,142 @@
     {/if}
   {/if}
   </CollapsibleSection>
+
+  {#if related.length}
+    <div class="related">
+      <CollapsibleSection title="Related to {selected?.name}">
+        <ul>
+          {#each related as r (r.id)}
+            <li>
+              <button class="row" onclick={() => setSelected(r.id)} title={r.node!.qualifiedName}>
+                <span class="badge {r.kind} {r.direction}">
+                  {r.kind === "inheritance" ? "⇧" : "→"}
+                </span>
+                <span class="name">{r.node!.name}</span>
+                <span class="rel-pkg">{r.node!.package}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </CollapsibleSection>
+    </div>
+  {/if}
+  </div>
+  {/if}
 </div>
 
 <style>
-  .panel {
-    padding: 0.6rem 0.75rem;
-    border-bottom: 1px solid var(--border);
+  .inspector {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 5;
+    width: 300px;
+    max-height: calc(100% - 24px);
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.97);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+  .inspector:not(.open) {
+    width: auto;
+    max-width: 300px;
+  }
+  .head {
     flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--fg);
+    text-align: left;
+  }
+  .head span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .open .head {
+    border-bottom: 1px solid var(--border, #e5e7eb);
+  }
+  .caret {
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+  .body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.6rem 0.75rem;
+  }
+  .related {
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border, #e5e7eb);
+  }
+  .related ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.25rem 0.3rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    text-align: left;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .row:hover {
+    background: var(--hover);
+  }
+  .name {
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .rel-pkg {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .badge {
+    flex-shrink: 0;
+    display: inline-block;
+    width: 1.2em;
+    height: 1.2em;
+    line-height: 1.2em;
+    text-align: center;
+    border-radius: 3px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.7rem;
+  }
+  .badge.inheritance {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .badge.association {
+    background: #fef3c7;
+    color: #b45309;
+  }
+  .badge.in {
+    transform: rotate(180deg);
   }
   .placeholder {
     margin: 0;

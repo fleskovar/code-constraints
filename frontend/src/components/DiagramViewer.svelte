@@ -46,6 +46,8 @@
       const draft = await api.editFromXmi(blob, `${xmi.id}.xmi`);
       loadFromJson(draft, `${xmi.id}.xmi`);
       setMode("edit");
+      // Keep `visibleClassIds`: the editor graph uses the same stable ids, so
+      // the view the user built carries over. Positions are re-laid out.
       diagramState.nodePositions = new Map();
     } catch (e) {
       editorError = (e as Error).message;
@@ -251,7 +253,6 @@
       {:else if !listing}
         <p class="muted">Loading…</p>
       {:else if selected?.diagram === "class"}
-        <ClassDetailsPanel {xmi} />
         <ClassListPanel {xmi} />
       {:else if selected?.diagram === "package"}
         <PackageListPanel {xmi} />
@@ -265,6 +266,7 @@
     {#if selected?.diagram === "class"}
       <main class="canvas flow">
         <ClassDiagramFlow {xmi} />
+        <ClassDetailsPanel {xmi} />
       </main>
       {#if changes.length > 0}
         <aside class="sidebar changes">
@@ -435,6 +437,7 @@
     border-color: var(--accent);
   }
   .canvas {
+    position: relative;
     overflow: hidden;
     background: var(--bg);
     min-width: 0;

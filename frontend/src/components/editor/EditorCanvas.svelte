@@ -5,6 +5,7 @@
     diagramState,
     setSelected,
     setNodePosition,
+    showAll,
   } from "../../lib/state/diagram.svelte";
   import {
     defaultClass,
@@ -127,6 +128,13 @@
         onclick={toggleCompare}
         title="Toggle live diff styling against the loaded baseline"
       >Compare{editorState.compare ? " ✓" : ""}</button>
+    {/if}
+    {#if diagramState.visibleClassIds !== null}
+      <button
+        type="button"
+        onclick={showAll}
+        title="The view filter from view mode is active. Show every class."
+      >Show all classes</button>
     {/if}
     <span class="hint"
       >Drag between nodes to draw a relationship · Delete removes the selected

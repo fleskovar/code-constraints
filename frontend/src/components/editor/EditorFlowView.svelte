@@ -31,9 +31,11 @@
   import {
     diagramState,
     setNodePositions,
+    setVisibleSet,
   } from "../../lib/state/diagram.svelte";
   import {
     editorState,
+    findClass,
     flowGraphIndex,
   } from "../../lib/state/editor.svelte";
   import EditableClassNode from "./EditableClassNode.svelte";
@@ -122,21 +124,48 @@
       });
   });
 
-  function applyGraph(
-    gNodes: ClassGraphNode[],
-    gEdges: {
-      id: string;
-      source: string;
-      target: string;
-      kind: "inheritance" | "association";
-      multiplicity: string;
-      status: string;
-    }[],
-  ) {
+  type GraphEdgeIn = {
+    id: string;
+    source: string;
+    target: string;
+    kind: "inheritance" | "association";
+    multiplicity: string;
+    status: string;
+  };
+
+  // Latest graph from the server; the effect below filters it by
+  // `visibleClassIds`, so a view built in view mode carries over into the editor.
+  let graphNodes = $state.raw<ClassGraphNode[]>([]);
+  let graphEdges = $state.raw<GraphEdgeIn[]>([]);
+  let knownIds: Set<string> | null = null;
+
+  function applyGraph(gNodes: ClassGraphNode[], gEdges: GraphEdgeIn[]) {
     // Refresh the shared qname-by-id index so EditorCanvas can resolve
     // SvelteFlow click events back to model classes.
     flowGraphIndex.qnameById.clear();
     for (const n of gNodes) flowGraphIndex.qnameById.set(n.id, n.qualifiedName);
+
+    // A class the user just added (or renamed) must not vanish behind the
+    // active filter, so draft classes new to this graph join the visible set.
+    const filter = untrack(() => diagramState.visibleClassIds);
+    if (filter !== null && knownIds !== null) {
+      const added = gNodes.filter(
+        (n) => !knownIds!.has(n.id) && findClass(n.qualifiedName),
+      );
+      if (added.length) setVisibleSet([...filter, ...added.map((n) => n.id)]);
+    }
+    knownIds = new Set(gNodes.map((n) => n.id));
+    graphNodes = gNodes;
+    graphEdges = gEdges;
+  }
+
+  $effect(() => {
+    const filter = diagramState.visibleClassIds;
+    const gNodes = graphNodes.filter((n) => filter === null || filter.has(n.id));
+    const shownIds = new Set(gNodes.map((n) => n.id));
+    const gEdges = graphEdges.filter(
+      (e) => shownIds.has(e.source) && shownIds.has(e.target),
+    );
 
     // Untracked read so writing back into nodePositions doesn't re-fire us.
     const existingPositions = untrack(() => diagramState.nodePositions);
@@ -185,7 +214,7 @@
           ? "stroke:#475569;stroke-width:1.5"
           : "stroke:#94a3b8;stroke-width:1",
     }));
-  }
+  });
 
   // Re-run dagre over the current nodes when the panel requests a compact
   // layout. Mirrors ClassDiagramFlow's behaviour.

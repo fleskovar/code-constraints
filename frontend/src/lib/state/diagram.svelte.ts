@@ -34,6 +34,9 @@ export interface DiagramState {
    *  out. Toggleable; `lodTier` is derived from the live zoom by the canvas. */
   lodEnabled: boolean;
   lodTier: LodTier;
+  /** Member compartments drawn on class nodes (the "Display" menu). */
+  showAttributes: boolean;
+  showOperations: boolean;
   /** Whether the kind-colour legend overlay is expanded. */
   legendOpen: boolean;
   /** Qualified class names a deep link (?focus=A,B) or a pushed proposal asked
@@ -68,6 +71,8 @@ export const diagramState: DiagramState = $state({
   revealStack: [] as string[][],
   lodEnabled: true,
   lodTier: "full" as LodTier,
+  showAttributes: true,
+  showOperations: true,
   legendOpen: true,
   pendingFocusQnames: null as string[] | null,
 });
@@ -243,10 +248,6 @@ export function setNodePositions(
 /** Bump the relayout token; the canvas listens for changes and re-runs dagre. */
 export function requestRelayout(): void {
   diagramState.relayoutToken += 1;
-}
-
-export function toggleLod(): void {
-  diagramState.lodEnabled = !diagramState.lodEnabled;
 }
 
 /** Set the detail tier; only writes on change to avoid churn while zooming. */

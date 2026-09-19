@@ -7,7 +7,6 @@
     reveal,
     collapseReveal,
     requestRelayout,
-    toggleLod,
   } from "../lib/state/diagram.svelte";
   import { openLayers } from "../lib/state/layers.svelte";
   import { openEdgeFocus } from "../lib/state/edgeFocus.svelte";
@@ -21,6 +20,13 @@
   const hasSelection = $derived(diagramState.selectedClassId !== null);
   const hasEdgeSelection = $derived(diagramState.selectedEdgeId !== null);
   const canCollapse = $derived(diagramState.revealStack.length > 0);
+
+  // A native <details> does not close on an outside click, so close it here.
+  let displayMenu = $state<HTMLDetailsElement | null>(null);
+  function closeMenuOnOutsideClick(e: MouseEvent) {
+    if (displayMenu?.open && !displayMenu.contains(e.target as Node))
+      displayMenu.open = false;
+  }
 
   let savingRef = $state(false);
   let refStatus = $state<{ kind: "ok" | "error"; msg: string } | null>(null);
@@ -43,19 +49,31 @@
   }
 </script>
 
+<svelte:window onclick={closeMenuOnOutsideClick} />
+
 {#if kind === "class" || kind === "package"}
   <div class="diagram-tools">
     {#if kind === "class"}
       <div class="group">
-        <button
-          class="toggle"
-          class:on={diagramState.lodEnabled}
-          onclick={toggleLod}
-          title="Level-of-detail: as you zoom out, simplify nodes to headers, then hide edges, then hide derived classes. Toggle off to always show full detail."
-          aria-pressed={diagramState.lodEnabled}
-        >
-          LOD {diagramState.lodEnabled ? "on" : "off"}
-        </button>
+        <details class="menu" bind:this={displayMenu}>
+          <summary title="Choose what the class nodes show">Display ▾</summary>
+          <div class="menu-body">
+            <label
+              title="Level-of-detail: as you zoom out, simplify nodes to headers, then hide edges, then hide derived classes. Turn off to always show full detail."
+            >
+              <input type="checkbox" bind:checked={diagramState.lodEnabled} />
+              Level of detail (LOD)
+            </label>
+            <label>
+              <input type="checkbox" bind:checked={diagramState.showAttributes} />
+              Attributes
+            </label>
+            <label>
+              <input type="checkbox" bind:checked={diagramState.showOperations} />
+              Methods
+            </label>
+          </div>
+        </details>
       </div>
     {/if}
     <div class="group">
@@ -171,11 +189,50 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
-  .diagram-tools button.toggle.on {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-    font-weight: 600;
+  .menu {
+    position: relative;
+  }
+  .menu summary {
+    list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: var(--fg);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .menu summary::-webkit-details-marker {
+    display: none;
+  }
+  .menu summary:hover,
+  .menu[open] summary {
+    background: var(--hover);
+  }
+  .menu-body {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    min-width: 12rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.5rem 0.65rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    font-size: 0.8rem;
+  }
+  .menu-body label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    white-space: nowrap;
   }
   .diagram-tools button.accent {
     border-color: var(--accent);

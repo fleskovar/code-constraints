@@ -26,6 +26,7 @@
   ) {
     newBlank(lang);
     diagramState.nodePositions = new Map();
+    diagramState.visibleClassIds = null;
     error = "";
   }
 
@@ -57,6 +58,7 @@
       const draft = await readModelFile(file);
       loadFromJson(draft, file.name);
       diagramState.nodePositions = new Map();
+      diagramState.visibleClassIds = null;
     } catch (err) {
       error = (err as Error).message;
     } finally {

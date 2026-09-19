@@ -108,7 +108,7 @@
     {/if}
   </header>
   {#if !compact}
-  {#if data.attributes.length}
+  {#if data.attributes.length && diagramState.showAttributes}
     <ul class="members attributes">
       {#each data.attributes as a, i (i + "|" + a.signature)}
         <li class="status-{a.status}" class:edge-related={hlAttrs.has(a.signature)}>
@@ -119,7 +119,7 @@
       {/each}
     </ul>
   {/if}
-  {#if data.operations.length}
+  {#if data.operations.length && diagramState.showOperations}
     <ul class="members operations">
       {#each data.operations as o, i (i + "|" + o.signature)}
         <li class="status-{o.status}" class:edge-related={hlOps.has(o.signature)}>
