@@ -106,6 +106,15 @@ def test_init_refuses_overwrite_without_force(project_dir):
     assert result.exit_code == 1
 
 
+def test_update_assets_reads_language_from_rules_yaml(project_dir):
+    # `init` writes the language to rules.yaml only. Without --lang,
+    # update-assets must find it there, not in the legacy config.yaml.
+    _run(["init", "--lang", "csharp", "--source", "src_tree"], cwd=project_dir)
+    result = _run(["update-assets", "--no-agents"], cwd=project_dir)
+    assert result.exit_code == 0, result.output
+    assert (project_dir / "CodeConstraintsRules.cs").is_file(), result.output
+
+
 def test_check_no_violations_on_unchanged_source(project_dir):
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
     # rules.yaml ships with `rules: []` so check should pass.
