@@ -67,8 +67,8 @@ example declares that nothing may subclass `Invoice`:
 }
 ```
 
-You can also edit the model in the browser. Click **Edit this diagram**, open the
-**Code** panel, edit the JSON, and click **Save .json**.
+You can also edit the model in the browser. Click **Edit**, open the **Code** panel,
+edit the JSON, and click **Save .json**.
 
 Show the proposal in the viewer, as a diff against the current code:
 
@@ -408,27 +408,38 @@ CLI prints, so an agent and a person can share one workflow.
 `cdec serve parse [PATH]` opens the class diagram of a codebase. `cdec serve` starts the
 viewer at http://127.0.0.1:8765 without a project. The class diagram gives you:
 
-- **Class list** with search and autocomplete. Click a class to centre the canvas on it.
-- **Related classes**: the inheritance and association neighbours of the selected class.
-- **Visibility filters**: a checkbox per class, plus Show all, Hide all and Isolate (N hops).
+- **Class tree**: classes grouped by package and by kind, with search and a visibility
+  checkbox on each package, kind and class. Click a class to centre the canvas on it.
+- **Inspector**: a floating panel with the details and the related classes of the
+  selected class.
+- **Toolbar**, in three groups:
+  - **Visibility**: the **Display** menu (members, relationship lines, level of detail),
+    and **Show all** / **Hide all** for the classes or for one kind of line.
+  - **Explore**: **Isolate** shows only the selected class. **↑ upstream** and
+    **↓ downstream** reveal one ring of neighbours, and **−** hides it again. **Step back**
+    undoes the last ring. **Inspect edge** opens the two classes of the selected line.
+  - **Layout**: **Re-layout** runs the auto-layout again over the visible classes.
+- **Architecture** menu: **Layers & rules** shows the layers and their allowed
+  dependencies. **Set as reference** saves the current diagram as `.cdec/reference.xmi`
+  after a confirmation.
 - **Saved views**: export the visible set, positions and selection to a `.cdecview.json`
   file, and import it later.
 - **Diff walkthrough**: for a diff, a Prev/Next change list moves the camera to each
   changed class.
 - **Rule badges** on tagged classes and operations. Hover a badge to see the rule and its
   parameters.
-- **Set as reference** saves the current diagram as `.cdec/reference.xmi`.
 
 Package, activity and sequence diagrams use the same interactive canvas.
 
-The **editor** (click **Edit this diagram**) supports:
+The **editor** (click **Edit**) keeps the classes that you filtered in the view. It
+supports:
 
 - **Visual edits**: add classes, drag between nodes to draw inheritance and associations,
   add attributes and methods, double-click to edit, and press **Delete** to remove a class.
 - **Code panel**: the model as editable JSON beside the canvas. An edit on one side updates
   the other. This is the same JSON that `cdec convert` and `cdec propose` use.
-- **Live diff**: load a baseline (**Baseline…**, or **Compare vs reference**), and the
-  canvas shows added, removed and changed elements while you edit.
+- **Live diff**: load a baseline (**Baseline…**, or **Architecture ▸ Compare with
+  reference**), and the canvas shows added, removed and changed elements while you edit.
 - **Open and save** as `.xmi` or `.json`.
 
 ## Embedded diagram tags

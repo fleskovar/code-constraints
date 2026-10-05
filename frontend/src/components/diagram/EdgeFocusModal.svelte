@@ -85,7 +85,7 @@
 
 <Modal
   open={edgeFocus.open}
-  title="Edge focus"
+  title="Inspect edge"
   width="780px"
   onclose={closeEdgeFocus}
 >

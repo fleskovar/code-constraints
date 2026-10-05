@@ -159,9 +159,11 @@ This parses the tree and opens your browser straight to the class diagram at
 `http://127.0.0.1:8765`. In the viewer you get:
 
 - an interactive, draggable canvas (SvelteFlow + dagre auto-layout);
-- a side panel with search, per-class visibility checkboxes, **Show all / Hide all**,
-  **Isolate** (show a class and its N-hop neighbours), and **Compact**;
-- a "Related" sub-list of inheritance and association neighbours;
+- a side panel with search and a package tree of classes, with a visibility checkbox on
+  each package, kind and class;
+- a toolbar to **Isolate** a class, reveal its **upstream** and **downstream** neighbours
+  one ring at a time, and **Re-layout** the canvas;
+- a floating inspector with the details and the related classes of the selected class;
 - **saved views** you can export to `.cdecview.json` and share with teammates;
 - diagram switching: **class**, **package**, **activity**, **sequence**.
 

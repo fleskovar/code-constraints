@@ -105,7 +105,7 @@
       ±
       <input type="number" min="0" max="10" bind:value={hops} />
     </label>
-    <button onclick={requestRelayout} title="Re-run auto-layout">Compact</button>
+    <button onclick={requestRelayout} title="Re-run the auto-layout over the visible elements">Re-layout</button>
   </div>
 
   {#if error}

@@ -12,7 +12,9 @@
     loadFromJson,
     setBaseline,
     setMode,
+    toggleCompare,
   } from "../lib/state/editor.svelte";
+  import { openLayers } from "../lib/state/layers.svelte";
   import ClassDiagramFlow from "./diagram/ClassDiagramFlow.svelte";
   import PackageDiagramFlow from "./diagram/PackageDiagramFlow.svelte";
   import ActivityDiagramFlow from "./diagram/ActivityDiagramFlow.svelte";
@@ -30,83 +32,112 @@
   import LayerClassesModal from "./panel/LayerClassesModal.svelte";
   import EdgeFocusModal from "./diagram/EdgeFocusModal.svelte";
   import DiagramToolbar from "./DiagramToolbar.svelte";
+  import ToolbarMenu from "./ToolbarMenu.svelte";
 
   let { xmi }: { xmi: XmiInfo } = $props();
 
-  let editorBusy = $state(false);
-  let editorError = $state("");
+  let busy = $state(false);
+  let status = $state<{ kind: "ok" | "error"; msg: string } | null>(null);
 
-  async function editCurrent() {
-    editorError = "";
-    editorBusy = true;
+  function report(kind: "ok" | "error", msg: string) {
+    status = { kind, msg };
+    if (kind === "ok") setTimeout(() => (status = null), 5000);
+  }
+
+  // Run one bar action: show the busy marker, report a thrown error.
+  async function run(action: () => Promise<void>) {
+    status = null;
+    busy = true;
     try {
+      await action();
+    } catch (e) {
+      report("error", (e as Error).message);
+    } finally {
+      busy = false;
+    }
+  }
+
+  const editCurrent = () =>
+    run(async () => {
       const res = await fetch(`/api/xmi/${xmi.id}/source`);
       if (!res.ok) throw new Error(`fetch source: ${res.status}`);
-      const blob = await res.blob();
-      const draft = await api.editFromXmi(blob, `${xmi.id}.xmi`);
+      const draft = await api.editFromXmi(await res.blob(), `${xmi.id}.xmi`);
       loadFromJson(draft, `${xmi.id}.xmi`);
       setMode("edit");
       // Keep `visibleClassIds`: the editor graph uses the same stable ids, so
       // the view the user built carries over. Positions are re-laid out.
       diagramState.nodePositions = new Map();
-    } catch (e) {
-      editorError = (e as Error).message;
-    } finally {
-      editorBusy = false;
-    }
+    });
+
+  function download(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
-  async function saveFile() {
-    editorError = "";
-    editorBusy = true;
-    try {
-      const blob = await api.editToXmi(editorState.project, editorState.fileName);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = editorState.fileName || "diagram.xmi";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+  const saveXmi = () =>
+    run(async () => {
+      const name = editorState.fileName || "diagram.xmi";
+      download(await api.editToXmi(editorState.project, name), name);
       editorState.dirty = false;
-    } catch (err) {
-      editorError = (err as Error).message;
-    } finally {
-      editorBusy = false;
-    }
+    });
+
+  function saveJson() {
+    const name = (editorState.fileName || "diagram.xmi").replace(/\.xmi$/i, ".json");
+    const body = JSON.stringify($state.snapshot(editorState.project), null, 2);
+    download(new Blob([body], { type: "application/json" }), name);
+    editorState.dirty = false;
   }
 
-  function exitEditor() {
+  // The next "Edit" reloads the model from the parse, so unsaved edits are
+  // lost once the user leaves. Ask first.
+  function leaveEditor() {
+    if (editorState.mode !== "edit") return;
+    if (
+      editorState.dirty &&
+      !confirm("You have unsaved edits. Leave edit mode and discard them?")
+    )
+      return;
     setMode("view");
     setBaseline(null);
-    editorError = "";
+    status = null;
   }
 
-  async function compareVsReference() {
-    editorError = "";
-    editorBusy = true;
-    try {
-      setBaseline(await api.referenceModel(xmi.project_id));
-    } catch (e) {
-      editorError = (e as Error).message;
-    } finally {
-      editorBusy = false;
-    }
-  }
+  // Load .cdec/reference.xmi as the diff baseline once, then toggle it.
+  const toggleReferenceCompare = () =>
+    run(async () => {
+      if (editorState.baseline) toggleCompare();
+      else setBaseline(await api.referenceModel(xmi.project_id));
+    });
 
-  async function setEditedAsReference() {
-    editorError = "";
-    editorBusy = true;
-    try {
-      const blob = await api.editToXmi(editorState.project, editorState.fileName);
-      const res = await api.setReference(xmi.project_id, blob);
-      editorError = `Saved as reference: ${res.path}`;
-    } catch (err) {
-      editorError = (err as Error).message;
-    } finally {
-      editorBusy = false;
-    }
+  // View mode saves the parsed diagram; edit mode saves the draft. Either way
+  // it overwrites the file the `reference-architecture` rule gates against.
+  function setAsReference() {
+    const what = editorState.mode === "edit" ? "the edited diagram" : "this diagram";
+    if (
+      !confirm(
+        `Overwrite .cdec/reference.xmi with ${what}? ` +
+          "cdec check compares the code against this file.",
+      )
+    )
+      return;
+    void run(async () => {
+      let blob: Blob;
+      if (editorState.mode === "edit") {
+        blob = await api.editToXmi(editorState.project, editorState.fileName);
+      } else {
+        const res = await fetch(`/api/xmi/${xmi.id}/source`);
+        if (!res.ok) throw new Error(`fetch source: ${res.status}`);
+        blob = await res.blob();
+      }
+      const saved = await api.setReference(xmi.project_id, blob);
+      report("ok", `Saved as reference: ${saved.path}`);
+    });
   }
 
   let listing = $state<DiagramListing | null>(null);
@@ -165,42 +196,65 @@
 <LayerClassesModal {xmi} />
 <EdgeFocusModal />
 <header class="editor-bar">
-  <div class="mode">
-    <span class="label">Mode:</span>
-    <button class:active={editorState.mode === "view"} onclick={exitEditor}>View</button>
+  <div class="mode" role="group" aria-label="Mode">
+    <button
+      class:active={editorState.mode === "view"}
+      aria-pressed={editorState.mode === "view"}
+      onclick={leaveEditor}
+      title="Explore the parsed diagram"
+    >View</button>
     <button
       class:active={editorState.mode === "edit"}
-      disabled={editorState.mode === "edit" || editorBusy}
-      onclick={editCurrent}
-    >Edit this diagram</button>
+      aria-pressed={editorState.mode === "edit"}
+      disabled={busy}
+      onclick={() => editorState.mode !== "edit" && editCurrent()}
+      title="Edit a copy of this diagram. The source code does not change."
+    >Edit</button>
   </div>
   {#if editorState.mode !== "edit"}
-    <DiagramToolbar kind={toolbarKind} {xmi} />
+    <DiagramToolbar kind={toolbarKind} />
   {/if}
   <div class="editor-actions">
+    {#if busy}<span class="muted">…</span>{/if}
+    {#if status}<span class="status {status.kind}">{status.msg}</span>{/if}
     {#if editorState.mode === "edit"}
-      <button class="primary" onclick={saveFile} disabled={editorBusy}>
+      <button
+        class="primary"
+        onclick={saveXmi}
+        disabled={busy}
+        title="Download the edited diagram as XMI"
+      >
         Save .xmi{editorState.dirty ? " *" : ""}
       </button>
       <button
-        onclick={setEditedAsReference}
-        disabled={editorBusy}
-        title="Save the edited diagram as this project's reference architecture (.cdec/reference.xmi)"
+        onclick={saveJson}
+        disabled={busy}
+        title="Download the edited diagram as model JSON, the format that cdec propose reads"
       >
-        Set as reference
+        Save .json
       </button>
-      {#if !editorState.baseline}
-        <button
-          onclick={compareVsReference}
-          disabled={editorBusy}
-          title="Load .cdec/reference.xmi as a baseline and show live diff styling while editing"
-        >
-          Compare vs reference
-        </button>
-      {/if}
     {/if}
-    {#if editorBusy}<span class="muted">…</span>{/if}
-    {#if editorError}<span class="error">{editorError}</span>{/if}
+    <ToolbarMenu
+      label="Architecture"
+      align="right"
+      title="Project actions: the layer rules and the reference architecture"
+    >
+      <button onclick={() => openLayers(null)}>Layers &amp; rules…</button>
+      <span class="menu-note">The layers and their allowed dependencies (rules.yaml).</span>
+      <hr />
+      {#if editorState.mode === "edit"}
+        <button onclick={toggleReferenceCompare} disabled={busy}>
+          {editorState.baseline && editorState.compare
+            ? "Stop comparing with reference"
+            : "Compare with reference"}
+        </button>
+        <span class="menu-note">Show live diff colours against .cdec/reference.xmi while you edit.</span>
+      {/if}
+      <button onclick={setAsReference} disabled={busy}>
+        {editorState.mode === "edit" ? "Set edited diagram as reference…" : "Set as reference…"}
+      </button>
+      <span class="menu-note">Overwrite .cdec/reference.xmi, the model that cdec check compares the code against.</span>
+    </ToolbarMenu>
   </div>
 </header>
 
@@ -333,13 +387,9 @@
     gap: 0.4rem;
     align-items: center;
   }
-  .editor-bar .label {
-    font-size: 0.8rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .editor-bar button {
+  /* Scoped to the bar's own buttons so menu items keep the menu style. */
+  .mode button,
+  .editor-actions > button {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 4px;
@@ -347,23 +397,46 @@
     font-size: 0.85rem;
     cursor: pointer;
     color: var(--fg);
+    white-space: nowrap;
   }
-  .editor-bar button:hover:not(:disabled) {
+  .mode button:hover:not(:disabled):not(.active),
+  .editor-actions > button:hover:not(:disabled) {
     background: var(--hover);
   }
-  .editor-bar button.active {
+  /* View | Edit reads as one two-state switch. */
+  .editor-bar .mode {
+    gap: 0;
+  }
+  .mode button:first-child {
+    border-radius: 4px 0 0 4px;
+  }
+  .mode button:last-child {
+    border-radius: 0 4px 4px 0;
+    border-left: none;
+  }
+  .mode button.active,
+  .editor-actions > button.primary {
     background: var(--accent);
     color: white;
     border-color: var(--accent);
   }
-  .editor-bar button.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
-  .editor-bar button:disabled {
+  .mode button:disabled,
+  .editor-actions > button:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  .status {
+    font-size: 0.75rem;
+    max-width: 28rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .status.ok {
+    color: #166534;
+  }
+  .status.error {
+    color: #c63a3a;
   }
   .editor-fullwidth {
     grid-column: 1 / -1;

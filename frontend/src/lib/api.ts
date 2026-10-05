@@ -357,11 +357,24 @@ export interface ServerView {
   positions?: Record<string, { x: number; y: number }>;
 }
 
+/** An Error for a failed response. FastAPI puts the reason in a JSON
+ *  `detail` field; show that text rather than the raw JSON body. */
+async function httpError(res: Response): Promise<Error> {
+  const body = await res.text();
+  let detail: unknown = body;
+  try {
+    detail = (JSON.parse(body) as { detail?: unknown }).detail ?? body;
+  } catch {
+    // Not JSON: keep the body as it is.
+  }
+  const text = typeof detail === "string" ? detail : JSON.stringify(detail);
+  return new Error(text || `${res.status} ${res.statusText}`);
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+    throw await httpError(res);
   }
   return res.json() as Promise<T>;
 }
@@ -369,8 +382,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 async function voidFetch(url: string, init?: RequestInit): Promise<void> {
   const res = await fetch(url, init);
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+    throw await httpError(res);
   }
 }
 
@@ -467,8 +479,7 @@ export const api = {
     fd.append("new_xmi", newXmi);
     const res = await fetch("/api/xmi/diff", { method: "POST", body: fd });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.json() as Promise<XmiInfo>;
   },
@@ -486,8 +497,7 @@ export const api = {
       body: fd,
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.json() as Promise<XmiInfo>;
   },
@@ -502,8 +512,7 @@ export const api = {
     fd.append("file", file, filename);
     const res = await fetch("/api/edit/from-xmi", { method: "POST", body: fd });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.json() as Promise<ProjectDraft>;
   },
@@ -514,8 +523,7 @@ export const api = {
       body: JSON.stringify(project),
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.json() as Promise<ClassGraph>;
   },
@@ -530,8 +538,7 @@ export const api = {
       body: JSON.stringify({ old: baseline, new: draft }),
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.json() as Promise<ClassGraph>;
   },
@@ -542,8 +549,7 @@ export const api = {
       body: xmi,
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.json() as Promise<{ path: string }>;
   },
@@ -579,8 +585,7 @@ export const api = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      const detail = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+      throw await httpError(res);
     }
     return res.blob();
   },
