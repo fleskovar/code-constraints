@@ -681,13 +681,20 @@ cdec ui [--host 127.0.0.1] [--port 8765] [--no-browser]
 
 `cdec serve` is the old name of this command. It still works as a hidden alias.
 
+The viewer creates a `.cdec_cache/` folder in the directory where you start it. The folder
+holds the parse cache, the list of recent paths (`recent.json`) and the views of each path
+(`<project>/views/*.json`). The viewer saves a view while you work. The folder contains a
+`.gitignore`, so git ignores it. It is safe to delete: you lose the recent list and the
+views, not your code.
+
 > Port 8000 is reserved by Windows `http.sys` on some machines; 8765 is the default for
 > that reason. Change with `--port`.
 
 #### `cdec ui parse`
 
 Shortcut: parse a tree and open the browser directly to its class diagram. Language is
-auto-detected when `--lang` is omitted.
+auto-detected when `--lang` is omitted. The viewer continues the view that the path was
+last seen in. A path that is new to this folder gets the view `Untitled 1`.
 
 ```
 cdec ui parse [PATH] [--lang L] [--host 127.0.0.1] [--port 8765]

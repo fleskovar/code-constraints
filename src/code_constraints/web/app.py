@@ -15,7 +15,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import yaml
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -43,6 +43,7 @@ from code_constraints.core.graph_model import (
 from code_constraints.core.xmi_reader import read_project
 from code_constraints.core.xmi_writer import build_tree as build_xmi_tree
 from code_constraints.core.xmi_writer import write_project
+from code_constraints.web import workspace
 
 from lxml import etree
 
@@ -233,6 +234,138 @@ def register_project(body: ProjectRegistration) -> ProjectInfo:
 @app.get("/api/projects", response_model=list[ProjectInfo])
 def list_projects() -> list[ProjectInfo]:
     return list(_registry._projects.values())
+
+
+# ---------- workspace: recent paths and auto-saved views (.cdec_cache) ----------
+
+# The home page detects while the user types, so the walk has a file budget.
+_DETECT_MAX_FILES = 20_000
+
+
+class DetectedLanguage(BaseModel):
+    lang: Optional[str] = None
+    is_dir: bool
+
+
+class WorkspaceViewMeta(BaseModel):
+    id: str
+    name: str
+    created: float
+    last_used: float
+
+
+class WorkspaceView(WorkspaceViewMeta):
+    """`state` is the canvas state. Only the frontend reads it."""
+
+    state: Optional[dict[str, Any]] = None
+
+
+class WorkspaceViewUpdate(BaseModel):
+    name: Optional[str] = None
+    state: Optional[dict[str, Any]] = None
+
+
+class RecentPath(BaseModel):
+    id: str
+    path: str
+    lang: str
+    last_used: float
+    exists: bool
+    views: list[WorkspaceViewMeta]
+
+
+def _workspace_call(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run a store call. A request the store refuses is a client error."""
+    try:
+        return fn(CACHE_ROOT, *args, **kwargs)
+    except workspace.WorkspaceError as exc:
+        status = 404 if str(exc).startswith("unknown view") else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+def _touch_recent(info: ProjectInfo) -> None:
+    workspace.touch_recent(CACHE_ROOT, info.id, info.path, info.lang)
+
+
+@app.get("/api/detect-language", response_model=DetectedLanguage)
+def detect_project_language(path: str) -> DetectedLanguage:
+    """Suggest the language of the source tree at `path` for the home page.
+    A path that is not a directory is not an error: the user is still typing."""
+    from code_constraints.cli.detect import detect_language
+
+    p = Path(path).expanduser()
+    if not path.strip() or not p.is_dir():
+        return DetectedLanguage(lang=None, is_dir=False)
+    return DetectedLanguage(lang=detect_language(p, max_files=_DETECT_MAX_FILES), is_dir=True)
+
+
+@app.get("/api/workspace", response_model=list[RecentPath])
+def workspace_recent() -> list[RecentPath]:
+    """Recently opened paths with their views, both most recently used first."""
+    return [
+        RecentPath(
+            id=e["id"],
+            path=e["path"],
+            lang=e["lang"],
+            last_used=e.get("last_used", 0),
+            exists=Path(e["path"]).is_dir(),
+            views=[WorkspaceViewMeta(**v) for v in workspace.list_views(CACHE_ROOT, e["id"])],
+        )
+        for e in workspace.list_recent(CACHE_ROOT)
+    ]
+
+
+@app.post("/api/workspace/recent/{project_id}", status_code=204)
+def workspace_touch_recent(project_id: str) -> Response:
+    """Mark a registered path as used now (a diff does not open a view)."""
+    _touch_recent(_registry.project(project_id))
+    return Response(status_code=204)
+
+
+@app.delete("/api/workspace/recent/{project_id}", status_code=204)
+def workspace_forget_recent(project_id: str) -> Response:
+    workspace.forget_recent(CACHE_ROOT, project_id)
+    return Response(status_code=204)
+
+
+@app.get("/api/projects/{project_id}/workspace/views", response_model=list[WorkspaceViewMeta])
+def workspace_list_views(project_id: str) -> list[WorkspaceViewMeta]:
+    info = _registry.project(project_id)
+    return [WorkspaceViewMeta(**v) for v in workspace.list_views(CACHE_ROOT, info.id)]
+
+
+@app.post("/api/projects/{project_id}/workspace/views", response_model=WorkspaceView)
+def workspace_create_view(project_id: str, body: Optional[WorkspaceViewUpdate] = None) -> WorkspaceView:
+    """Create a view. Without a name it is the next `Untitled N`."""
+    info = _registry.project(project_id)
+    view = _workspace_call(workspace.create_view, info.id, body.name if body else None)
+    _touch_recent(info)
+    return WorkspaceView(**view)
+
+
+@app.post("/api/projects/{project_id}/workspace/views/{view_id}/open", response_model=WorkspaceView)
+def workspace_open_view(project_id: str, view_id: str) -> WorkspaceView:
+    """Return a view with its state and mark it, and its path, as used now."""
+    info = _registry.project(project_id)
+    view = _workspace_call(workspace.update_view, info.id, view_id)
+    _touch_recent(info)
+    return WorkspaceView(**view)
+
+
+@app.put("/api/projects/{project_id}/workspace/views/{view_id}", response_model=WorkspaceViewMeta)
+def workspace_update_view(project_id: str, view_id: str, body: WorkspaceViewUpdate) -> WorkspaceViewMeta:
+    """Rename a view and/or replace its state. The viewer calls this by itself
+    while the user works."""
+    info = _registry.project(project_id)
+    view = _workspace_call(workspace.update_view, info.id, view_id, name=body.name, state=body.state)
+    return WorkspaceViewMeta(**view)
+
+
+@app.delete("/api/projects/{project_id}/workspace/views/{view_id}", status_code=204)
+def workspace_delete_view(project_id: str, view_id: str) -> Response:
+    info = _registry.project(project_id)
+    _workspace_call(workspace.delete_view, info.id, view_id)
+    return Response(status_code=204)
 
 
 class LayerDependencies(BaseModel):

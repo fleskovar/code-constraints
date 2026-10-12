@@ -162,7 +162,7 @@
 </script>
 
 <div class="saved-views">
-  <CollapsibleSection title="Views">
+  <CollapsibleSection title="Shared views">
   {#if loadingViews}
     <p class="hint">Loading…</p>
   {:else if viewsError}

@@ -8,7 +8,7 @@ import {
   showAll as svcShowAll,
   setVisibleSet,
 } from "./state/diagram.svelte";
-import type { ClassGraph, ServerView } from "./api";
+import type { ClassGraph, ServerView, WorkspaceViewState } from "./api";
 
 export const VIEW_SCHEMA = "code-constraints/view@1";
 
@@ -181,4 +181,41 @@ export function applyServerView(
   setSelected(null);
 
   return { dropped };
+}
+
+// ---------- workspace views (auto-saved to .cdec_cache, keyed by stable id) ----------
+
+/** The canvas state the open workspace view saves. Node ids are stable across
+ *  parses (`sha1(kind|qualified_name)`), so a view survives a re-parse while the
+ *  qualified names stay. Call it inside an `$effect` to save on every change. */
+export function snapshotWorkspaceState(
+  diagram: WorkspaceViewState["diagram"],
+): WorkspaceViewState {
+  const positions: WorkspaceViewState["nodePositions"] = {};
+  for (const [id, p] of diagramState.nodePositions)
+    positions[id] = { x: Math.round(p.x), y: Math.round(p.y) };
+  return {
+    diagram,
+    visibleClassIds:
+      diagramState.visibleClassIds === null ? null : [...diagramState.visibleClassIds],
+    nodePositions: positions,
+    display: {
+      lodEnabled: diagramState.lodEnabled,
+      showAttributes: diagramState.showAttributes,
+      showOperations: diagramState.showOperations,
+      showInheritanceEdges: diagramState.showInheritanceEdges,
+      showReferenceEdges: diagramState.showReferenceEdges,
+      revealVia: diagramState.revealVia,
+    },
+  };
+}
+
+/** Put a workspace view on the canvas. `null` is a new view: every element
+ *  visible, automatic layout. The display options stay as the user set them. */
+export function applyWorkspaceState(state: WorkspaceViewState | null): void {
+  diagramState.visibleClassIds = state?.visibleClassIds ? new Set(state.visibleClassIds) : null;
+  diagramState.nodePositions = new Map(Object.entries(state?.nodePositions ?? {}));
+  diagramState.revealStack = [];
+  setSelected(null);
+  if (state?.display) Object.assign(diagramState, state.display);
 }

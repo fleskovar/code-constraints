@@ -486,7 +486,27 @@ CLI prints, so an agent and a person can share one workflow.
 
 `cdec ui parse [PATH]` opens the class diagram of a codebase. `cdec ui` starts the
 viewer at http://127.0.0.1:8765 without a project and opens it in the browser. Add
-`--no-browser` to start the viewer only. The class diagram gives you:
+`--no-browser` to start the viewer only.
+
+The viewer keeps your work in a `.cdec_cache/` folder. It creates the folder in the
+directory where you start `cdec ui`, and the folder ignores itself in git.
+
+- **Recent paths**: the home page lists the paths you opened, most recently used first.
+- **Views**: each path has views. A view is the state of the canvas: the diagram, the
+  visible elements, their positions and the display options. Open a view to continue it,
+  or select **New view** to start `Untitled 1`, `Untitled 2`, and so on.
+- **Automatic save**: the viewer saves the open view while you work. You do not have to
+  name it first. To give it a name, edit the name in the header or in the home page list.
+- **Language**: when you type a path, the viewer finds the language from the files and
+  sets the dropdown. You can change it.
+
+`cdec ui parse [PATH]` continues the view that the path was last seen in.
+
+A view in `.cdec_cache/` is local to your machine. The **Shared views** in the left panel
+are a different thing: you save them by name to `.cdec/views/`, and you commit them for
+the team.
+
+The class diagram gives you:
 
 - **Class tree**: classes grouped by package and by kind, with search and a visibility
   checkbox on each package, kind and class. Click a class to centre the canvas on it.

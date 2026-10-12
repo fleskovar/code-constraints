@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type ProjectInfo, type XmiInfo } from "./lib/api";
+  import {
+    api,
+    type ProjectInfo,
+    type WorkspaceView,
+    type XmiInfo,
+  } from "./lib/api";
   import HomePage, { type HomeIntent } from "./components/HomePage.svelte";
   import DiagramViewer from "./components/DiagramViewer.svelte";
   import DiffViewer from "./components/DiffViewer.svelte";
@@ -8,6 +13,7 @@
   import EditorModals from "./components/editor/EditorModals.svelte";
   import { newBlank, setMode } from "./lib/state/editor.svelte";
   import { setPendingFocus } from "./lib/state/diagram.svelte";
+  import { applyWorkspaceState } from "./lib/views";
 
   type Mode = "browse" | "diff" | "editor";
 
@@ -19,8 +25,18 @@
   // `cdec ui parse` deep-links here with ?path=&lang=; auto-run the parse.
   let autoloading = $state(false);
   let autoloadPath = $state("");
+  // The workspace view that is open, if the canvas shows a parsed path. The
+  // viewer saves it while the user works. A diff or a proposal has none.
+  let view = $state<WorkspaceView | null>(null);
+  let viewName = $state("");
 
   function launch(intent: HomeIntent) {
+    view = intent.kind === "parse" ? (intent.view ?? null) : null;
+    viewName = view?.name ?? "";
+    // Every launch starts from the state of its view, or from a clean canvas.
+    // The canvas state is one module-level object, so without this the filter
+    // of the last project stays on the next one.
+    applyWorkspaceState(view?.state ?? null);
     if (intent.kind === "editor") {
       newBlank();
       setMode("edit");
@@ -64,9 +80,27 @@
     }
   }
 
+  // Rename the open view. An empty or refused name puts the old one back.
+  async function renameView() {
+    if (!project || !view) return;
+    const name = viewName.trim();
+    if (!name || name === view.name) {
+      viewName = view.name;
+      return;
+    }
+    try {
+      const saved = await api.saveWorkspaceView(project.id, view.id, { name });
+      view.name = saved.name;
+    } catch (e) {
+      error = (e as Error).message;
+    }
+    viewName = view.name;
+  }
+
   function reset() {
     project = null;
     xmi = null;
+    view = null;
     editorOnly = false;
     setMode("view");
     error = "";
@@ -155,7 +189,13 @@
         lang as ProjectInfo["lang"],
       );
       const x = await api.parse(proj.id);
-      launch({ kind: "parse", project: proj, xmi: x });
+      // Continue the view this path was last seen in. A path that is new to
+      // this folder gets its first untitled view.
+      const [latest] = await api.workspaceViews(proj.id);
+      const v = latest
+        ? await api.openWorkspaceView(proj.id, latest.id)
+        : await api.createWorkspaceView(proj.id);
+      launch({ kind: "parse", project: proj, xmi: x, view: v });
       // Clear the query so a refresh / Home doesn't re-trigger the autoload.
       history.replaceState(null, "", window.location.pathname);
     } catch (e) {
@@ -173,6 +213,16 @@
       <span class="path" title={project.path}>{project.path}
         <span class="lang">{project.lang}</span>
       </span>
+      {#if view}
+        <input
+          class="view-name"
+          aria-label="View name"
+          title="The name of this view. The viewer saves the view while you work."
+          bind:value={viewName}
+          onchange={renameView}
+          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+        />
+      {/if}
       <nav>
         <button class:active={mode === "browse"} onclick={() => (mode = "browse")}>Browse</button>
         {#if !isSynthetic}
@@ -205,7 +255,7 @@
     {:else if error}
       <p class="error">{error}</p>
     {:else if mode === "browse" && xmi}
-      <DiagramViewer {xmi} />
+      <DiagramViewer {xmi} bind:view />
     {:else if mode === "diff"}
       <DiffViewer {project} />
     {/if}
@@ -255,6 +305,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .view-name {
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    width: 11rem;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fg);
+  }
+  .view-name:hover,
+  .view-name:focus {
+    border-color: var(--border);
+    background: var(--surface);
   }
   .lang {
     background: var(--hover);

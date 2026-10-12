@@ -1,7 +1,17 @@
+/** Every language the backend parses (`SUPPORTED_LANGUAGES` in core/model.py). */
+export type Lang =
+  | "python"
+  | "csharp"
+  | "typescript"
+  | "svelte"
+  | "odin"
+  | "lua"
+  | "julia";
+
 export interface ProjectInfo {
   id: string;
   path: string;
-  lang: "python" | "csharp" | "typescript" | "svelte";
+  lang: Lang;
 }
 
 export interface XmiInfo {
@@ -359,6 +369,49 @@ export interface ServerView {
   positions?: Record<string, { x: number; y: number }>;
 }
 
+// ---------- workspace: recent paths and auto-saved views (.cdec_cache) ----------
+
+/** The canvas state a workspace view holds. The server stores it as it is. */
+export interface WorkspaceViewState {
+  /** The diagram the view shows. Its ids below belong to that diagram. */
+  diagram: { diagram: string; name?: string } | null;
+  /** `null` means "everything visible". */
+  visibleClassIds: string[] | null;
+  nodePositions: Record<string, { x: number; y: number }>;
+  display: {
+    lodEnabled: boolean;
+    showAttributes: boolean;
+    showOperations: boolean;
+    showInheritanceEdges: boolean;
+    showReferenceEdges: boolean;
+    revealVia: "all" | "inheritance" | "association";
+  };
+}
+
+/** A view without its state. Times are seconds since the epoch. */
+export interface WorkspaceViewMeta {
+  id: string;
+  name: string;
+  created: number;
+  last_used: number;
+}
+
+export interface WorkspaceView extends WorkspaceViewMeta {
+  /** `null` for a view that was created and never saved. */
+  state: WorkspaceViewState | null;
+}
+
+/** A recently opened path with its views, most recently used first. */
+export interface RecentPath {
+  id: string;
+  path: string;
+  lang: Lang;
+  last_used: number;
+  /** False when the folder is gone from the disk. */
+  exists: boolean;
+  views: WorkspaceViewMeta[];
+}
+
 /** An Error for a failed response. FastAPI puts the reason in a JSON
  *  `detail` field; show that text rather than the raw JSON body. */
 async function httpError(res: Response): Promise<Error> {
@@ -389,7 +442,7 @@ async function voidFetch(url: string, init?: RequestInit): Promise<void> {
 }
 
 export const api = {
-  registerProject(path: string, lang: "python" | "csharp" | "typescript" | "svelte"): Promise<ProjectInfo> {
+  registerProject(path: string, lang: Lang): Promise<ProjectInfo> {
     return jsonFetch("/api/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -487,7 +540,7 @@ export const api = {
   },
   async diffSourceVsXmi(
     path: string,
-    lang: "python" | "csharp" | "typescript" | "svelte",
+    lang: Lang,
     referenceXmi: File,
   ): Promise<XmiInfo> {
     const fd = new FormData();
@@ -554,6 +607,57 @@ export const api = {
       throw await httpError(res);
     }
     return res.json() as Promise<{ path: string }>;
+  },
+  /** Suggest the language of a source tree. `lang` is null when the path is
+   *  not a directory or holds no known language. */
+  detectLanguage(path: string): Promise<{ lang: Lang | null; is_dir: boolean }> {
+    return jsonFetch(`/api/detect-language?path=${encodeURIComponent(path)}`);
+  },
+  workspace(): Promise<RecentPath[]> {
+    return jsonFetch("/api/workspace");
+  },
+  touchRecent(projectId: string): Promise<void> {
+    return voidFetch(`/api/workspace/recent/${projectId}`, { method: "POST" });
+  },
+  forgetRecent(projectId: string): Promise<void> {
+    return voidFetch(`/api/workspace/recent/${projectId}`, { method: "DELETE" });
+  },
+  workspaceViews(projectId: string): Promise<WorkspaceViewMeta[]> {
+    return jsonFetch(`/api/projects/${projectId}/workspace/views`);
+  },
+  /** Create a view. Without a name the server calls it the next `Untitled N`. */
+  createWorkspaceView(projectId: string, name?: string): Promise<WorkspaceView> {
+    return jsonFetch(`/api/projects/${projectId}/workspace/views`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(name ? { name } : {}),
+    });
+  },
+  /** Read a view with its state and mark it as used now. */
+  openWorkspaceView(projectId: string, viewId: string): Promise<WorkspaceView> {
+    return jsonFetch(`/api/projects/${projectId}/workspace/views/${viewId}/open`, {
+      method: "POST",
+    });
+  },
+  /** Rename a view and/or replace its state. `keepalive` lets the request
+   *  finish while the page closes. */
+  saveWorkspaceView(
+    projectId: string,
+    viewId: string,
+    body: { name?: string; state?: WorkspaceViewState },
+    keepalive = false,
+  ): Promise<WorkspaceViewMeta> {
+    return jsonFetch(`/api/projects/${projectId}/workspace/views/${viewId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      keepalive,
+    });
+  },
+  deleteWorkspaceView(projectId: string, viewId: string): Promise<void> {
+    return voidFetch(`/api/projects/${projectId}/workspace/views/${viewId}`, {
+      method: "DELETE",
+    });
   },
   listViews(projectId: string): Promise<ServerViewListing[]> {
     return jsonFetch(`/api/projects/${projectId}/views`);

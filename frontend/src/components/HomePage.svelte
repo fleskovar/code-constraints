@@ -1,15 +1,17 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import {
     api,
     type GitInfo,
+    type Lang,
     type ProjectInfo,
+    type RecentPath,
+    type WorkspaceView,
     type XmiInfo,
   } from "../lib/api";
 
-  type Lang = "python" | "csharp" | "typescript" | "svelte";
-
   export type HomeIntent =
-    | { kind: "parse"; project: ProjectInfo; xmi: XmiInfo }
+    | { kind: "parse"; project: ProjectInfo; xmi: XmiInfo; view?: WorkspaceView }
     | { kind: "diff_custom"; project: ProjectInfo }
     | { kind: "quick_diff"; project: ProjectInfo; xmi: XmiInfo }
     | { kind: "xmi_diff"; project: ProjectInfo; xmi: XmiInfo }
@@ -17,47 +19,18 @@
 
   let { onLaunch }: { onLaunch: (intent: HomeIntent) => void } = $props();
 
-  type RecentEntry = {
-    id: string;
-    path: string;
-    lang: Lang;
-    lastUsed: number;
+  const LANG_LABELS: Record<Lang, string> = {
+    python: "Python",
+    csharp: "C#",
+    typescript: "TypeScript",
+    svelte: "Svelte 5",
+    odin: "Odin",
+    lua: "Lua",
+    julia: "Julia",
   };
 
-  const RECENTS_KEY = "code-constraints:recent-projects:v1";
-
-  function loadRecents(): RecentEntry[] {
-    try {
-      const raw = localStorage.getItem(RECENTS_KEY);
-      if (!raw) return [];
-      return JSON.parse(raw) as RecentEntry[];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveRecents(list: RecentEntry[]) {
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 8)));
-  }
-
-  function rememberProject(p: ProjectInfo) {
-    const list = loadRecents();
-    const next: RecentEntry = {
-      id: p.id,
-      path: p.path,
-      lang: p.lang,
-      lastUsed: Date.now(),
-    };
-    const filtered = list.filter((r) => r.id !== p.id);
-    filtered.unshift(next);
-    saveRecents(filtered);
-    recents = filtered;
-  }
-
-  function forget(id: string) {
-    recents = recents.filter((r) => r.id !== id);
-    saveRecents(recents);
-  }
+  // What a view row needs to know about its path.
+  type PathRef = Pick<RecentPath, "id" | "path" | "lang">;
 
   let path = $state("");
   let lang = $state<Lang>("python");
@@ -70,7 +43,51 @@
   let referenceXmi = $state<File | null>(null);
   let gitInfo = $state<GitInfo | null>(null);
   let gitLookupInflight = $state(false);
-  let recents = $state<RecentEntry[]>(loadRecents());
+
+  // ---------- recent paths and their views (the server keeps them in .cdec_cache) ----------
+
+  let recents = $state<RecentPath[]>([]);
+  // The path + language in the form, once the server knows it as a project.
+  let current = $state<ProjectInfo | null>(null);
+  const currentViews = $derived(recents.find((r) => r.id === current?.id)?.views ?? []);
+
+  async function loadRecents() {
+    try {
+      recents = await api.workspace();
+    } catch {
+      // The list is a convenience. The form above works without it.
+    }
+  }
+  onMount(loadRecents);
+
+  async function forget(id: string) {
+    await api.forgetRecent(id).catch(() => {});
+    await loadRecents();
+  }
+
+  // ---------- language suggestion ----------
+
+  // Suggest the language when the path changes. A choice the user makes in
+  // the dropdown stays until the path changes again.
+  let detected = $state<Lang | null>(null);
+  // A path whose language is known already (a recent entry) gets no suggestion.
+  let knownLangPath = "";
+  $effect(() => {
+    const p = path.trim();
+    detected = null;
+    if (!p || p === knownLangPath) return;
+    const timer = setTimeout(async () => {
+      try {
+        const found = await api.detectLanguage(p);
+        if (p !== path.trim() || !found.lang) return; // the user typed on
+        detected = found.lang;
+        lang = found.lang;
+      } catch {
+        // No suggestion. The dropdown keeps its value.
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  });
 
   // Whenever path changes (and is non-empty), register the project quietly
   // and fetch its git-info, so the UI can show HEAD/parent and enable or
@@ -78,10 +95,12 @@
   async function refreshGitInfo() {
     error = "";
     gitInfo = null;
+    current = null;
     if (!path.trim()) return;
     gitLookupInflight = true;
     try {
       const project = await api.registerProject(path.trim(), lang);
+      current = project;
       gitInfo = await api.gitInfo(project.id);
     } catch (e) {
       // Quietly swallow — the user might still be typing the path. The card
@@ -101,14 +120,19 @@
     debounceTimer = setTimeout(refreshGitInfo, 400);
   });
 
-  async function doParse() {
+  // Parse a path and open one of its views. Without a view id the server
+  // creates the next `Untitled N`. The viewer saves the view while the user
+  // works, so nothing here asks for a name.
+  async function openView(target: Pick<PathRef, "path" | "lang">, viewId: string | null) {
     busyAction = "parse";
     error = "";
     try {
-      const project = await api.registerProject(path.trim(), lang);
-      rememberProject(project);
+      const project = await api.registerProject(target.path, target.lang);
       const xmi = await api.parse(project.id);
-      onLaunch({ kind: "parse", project, xmi });
+      const view = viewId
+        ? await api.openWorkspaceView(project.id, viewId)
+        : await api.createWorkspaceView(project.id);
+      onLaunch({ kind: "parse", project, xmi, view });
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -116,12 +140,42 @@
     }
   }
 
+  const doParse = () => openView({ path: path.trim(), lang }, null);
+
+  // ---------- rename / delete a view from the lists ----------
+
+  let renaming = $state<{ viewId: string; value: string } | null>(null);
+
+  // The registry of the server is in memory, so a path from an earlier run is
+  // registered again before a call that names its project.
+  async function onView(target: PathRef, action: (projectId: string) => Promise<unknown>) {
+    error = "";
+    try {
+      await action((await api.registerProject(target.path, target.lang)).id);
+    } catch (e) {
+      error = (e as Error).message;
+    }
+    await loadRecents();
+  }
+
+  async function submitRename(target: PathRef) {
+    const r = renaming;
+    renaming = null;
+    const name = r?.value.trim();
+    if (!r || !name) return;
+    await onView(target, (pid) => api.saveWorkspaceView(pid, r.viewId, { name }));
+  }
+
+  const deleteView = (target: PathRef, viewId: string, name: string) =>
+    confirm(`Delete the view "${name}"?`) &&
+    onView(target, (pid) => api.deleteWorkspaceView(pid, viewId));
+
   async function doDiffCustom() {
     busyAction = "diffcustom";
     error = "";
     try {
       const project = await api.registerProject(path.trim(), lang);
-      rememberProject(project);
+      void api.touchRecent(project.id).catch(() => {});
       onLaunch({ kind: "diff_custom", project });
     } catch (e) {
       error = (e as Error).message;
@@ -135,7 +189,7 @@
     error = "";
     try {
       const project = await api.registerProject(path.trim(), lang);
-      rememberProject(project);
+      void api.touchRecent(project.id).catch(() => {});
       const xmi = await api.quickDiff(project.id);
       onLaunch({ kind: "quick_diff", project, xmi });
     } catch (e) {
@@ -201,10 +255,15 @@
     xmiNew = t.files && t.files[0] ? t.files[0] : null;
   }
 
-  async function relaunchRecent(r: RecentEntry, kind: "parse" | "quickdiff") {
+  // Put a recent path in the form. Its language is known, so do not suggest one.
+  function useRecent(r: PathRef) {
+    knownLangPath = r.path;
     path = r.path;
     lang = r.lang;
-    if (kind === "parse") return doParse();
+  }
+
+  function quickDiffRecent(r: PathRef) {
+    useRecent(r);
     return doQuickDiff();
   }
 
@@ -224,6 +283,50 @@
     return `${Math.floor(s / 86400)}d ago`;
   }
 </script>
+
+{#snippet viewList(target: PathRef, views: RecentPath["views"], canOpen: boolean)}
+  <ul class="views">
+    {#each views as v (v.id)}
+      <li>
+        {#if renaming?.viewId === v.id}
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            class="rename"
+            aria-label="View name"
+            bind:value={renaming.value}
+            autofocus
+            onkeydown={(e) => {
+              if (e.key === "Enter") submitRename(target);
+              if (e.key === "Escape") renaming = null;
+            }}
+            onblur={() => submitRename(target)}
+          />
+        {:else}
+          <span class="view-name" title={v.name}>{v.name}</span>
+          <span class="muted">{fmtAgo(v.last_used * 1000)}</span>
+          <button
+            class="open"
+            disabled={!canOpen || busyAction !== null}
+            onclick={() => openView(target, v.id)}
+            title="Parse the path and continue this view">Open</button
+          >
+          <button
+            class="ghost"
+            title="Rename"
+            aria-label="Rename {v.name}"
+            onclick={() => (renaming = { viewId: v.id, value: v.name })}>✎</button
+          >
+          <button
+            class="ghost"
+            title="Delete"
+            aria-label="Delete {v.name}"
+            onclick={() => deleteView(target, v.id, v.name)}>✕</button
+          >
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/snippet}
 
 <div class="home">
   <div class="hero">
@@ -247,12 +350,18 @@
     </label>
     <label class="row">
       <span class="lbl">Language</span>
-      <select bind:value={lang}>
-        <option value="python">Python</option>
-        <option value="csharp">C#</option>
-        <option value="typescript">TypeScript</option>
-        <option value="svelte">Svelte 5</option>
-      </select>
+      <span class="lang-row">
+        <select bind:value={lang}>
+          {#each Object.entries(LANG_LABELS) as [value, label] (value)}
+            <option {value}>{label}</option>
+          {/each}
+        </select>
+        {#if detected}
+          <span class="muted" title="Found from the files in this path. Change it if it is wrong.">
+            {detected === lang ? "detected" : `detected: ${LANG_LABELS[detected]}`}
+          </span>
+        {/if}
+      </span>
     </label>
 
     {#if path.trim()}
@@ -287,6 +396,13 @@
         {/if}
       </div>
     {/if}
+
+    {#if current && currentViews.length > 0}
+      <div class="path-views">
+        <h3>Views of this path</h3>
+        {@render viewList(current, currentViews, true)}
+      </div>
+    {/if}
   </section>
 
   <section class="commands">
@@ -300,10 +416,11 @@
         <div class="card-title">Parse &amp; view</div>
         <code class="cli">cdec parse {path || "<path>"} --lang {lang}</code>
         <div class="card-desc">
-          Parse the source tree into XMI and open the interactive viewer.
+          Parse the source tree and open the interactive viewer on a new view.
+          The viewer saves the view while you work.
         </div>
         <div class="card-action">
-          {busyAction === "parse" ? "Parsing…" : "Run"}
+          {busyAction === "parse" ? "Parsing…" : "New view"}
         </div>
       </button>
 
@@ -435,22 +552,46 @@
 
   {#if recents.length > 0}
     <section class="recents">
-      <h2>Recent projects</h2>
-      <ul>
+      <h2>Recent paths</h2>
+      <ul class="paths">
         {#each recents as r (r.id)}
           <li>
-            <div class="recent-meta">
-              <code class="path" title={r.path}>{r.path}</code>
-              <span class="lang-tag">{r.lang}</span>
-              <span class="muted">{fmtAgo(r.lastUsed)}</span>
+            <div class="recent-head">
+              <div class="recent-meta">
+                <button
+                  class="path"
+                  title="{r.path} — put this path in the form above"
+                  onclick={() => useRecent(r)}>{r.path}</button
+                >
+                <span class="lang-tag">{r.lang}</span>
+                {#if !r.exists}<span class="warn-inline">folder not found</span>{/if}
+                <span class="muted">{fmtAgo(r.last_used * 1000)}</span>
+              </div>
+              <div class="recent-actions">
+                <button
+                  disabled={!r.exists || busyAction !== null}
+                  onclick={() => openView(r, null)}
+                  title="Parse the path and open a new untitled view">New view</button
+                >
+                <button
+                  disabled={!r.exists || busyAction !== null}
+                  onclick={() => quickDiffRecent(r)}
+                >
+                  Quick diff
+                </button>
+                <button
+                  class="ghost"
+                  onclick={() => forget(r.id)}
+                  title="Remove from the list. The views stay on the disk."
+                  aria-label="Remove {r.path} from the list">×</button
+                >
+              </div>
             </div>
-            <div class="recent-actions">
-              <button onclick={() => relaunchRecent(r, "parse")}>Parse</button>
-              <button onclick={() => relaunchRecent(r, "quickdiff")}>
-                Quick diff
-              </button>
-              <button class="ghost" onclick={() => forget(r.id)} title="Remove from list">×</button>
-            </div>
+            {#if r.views.length > 0}
+              {@render viewList(r, r.views, r.exists)}
+            {:else}
+              <p class="muted no-views">No views yet.</p>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -711,22 +852,35 @@
     cursor: not-allowed;
   }
 
-  .recents ul {
+  .lang-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .path-views h3 {
+    margin: 0.8rem 0 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .recents ul.paths {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.4rem;
   }
-  .recents li {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
+  .recents ul.paths > li {
     padding: 0.45rem 0.7rem;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 6px;
+  }
+  .recent-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
   }
   .recent-meta {
     flex: 1;
@@ -742,6 +896,70 @@
     white-space: nowrap;
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: 0.8rem;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .recent-meta .path:hover {
+    text-decoration: underline;
+  }
+  /* The views of one path, most recently used first. */
+  ul.views {
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0 0 0 0.9rem;
+    border-left: 2px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  ul.views li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+  }
+  ul.views .view-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  ul.views input.rename {
+    flex: 1;
+    font: inherit;
+    padding: 0.1rem 0.3rem;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+  }
+  ul.views button {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+    color: var(--fg);
+    font-size: 0.76rem;
+  }
+  ul.views button:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  ul.views button.ghost {
+    border-color: transparent;
+    color: var(--muted);
+    padding: 0.15rem 0.3rem;
+  }
+  ul.views button:disabled,
+  .recent-actions button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .no-views {
+    margin: 0.3rem 0 0 0.9rem;
   }
   .lang-tag {
     background: var(--hover);

@@ -48,12 +48,26 @@ EXT_TO_LANG = {
 _PRIORITY = ("python", "csharp", "typescript", "odin", "lua", "julia")
 
 
-def detect_language(root: Path) -> Optional[str]:
-    """Return the detected language for the tree at `root`, or None."""
+def detect_language(root: Path, max_files: Optional[int] = None) -> Optional[str]:
+    """Return the detected language for the tree at `root`, or None.
+
+    `max_files` stops the walk after that many files and answers from the
+    sample. The web viewer passes it: it detects while the user types a path,
+    and a path such as `C:/` must not walk a whole drive.
+    """
     counts: dict[str, int] = {}
     saw_svelte = False
+    seen = 0
 
     for dirpath, dirnames, filenames in os.walk(root):
+        # ponytail: the budget is checked once per directory and the walk is
+        # top-down, so the sample favours shallow folders. A tree whose main
+        # language sits below 20k files of something else gets a wrong
+        # suggestion. The user corrects it in the dropdown; sample by depth if
+        # that turns out to matter.
+        if max_files is not None and seen >= max_files:
+            break
+        seen += len(filenames)
         # Prune ignored directories in place so os.walk doesn't descend.
         dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
         for name in filenames:

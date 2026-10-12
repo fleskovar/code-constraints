@@ -1615,6 +1615,13 @@ def _run_server(host: str, port: int, open_url: Optional[str] = None) -> None:
     server has had a moment to bind."""
     import uvicorn
 
+    from code_constraints.web import workspace
+    from code_constraints.web.app import CACHE_ROOT
+
+    # The viewer keeps its recent paths and its views here. Create the folder
+    # at start, so the first thing the user opens is remembered.
+    workspace.ensure_cache(CACHE_ROOT)
+
     if open_url is not None:
         import threading
         import webbrowser

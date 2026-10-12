@@ -1,11 +1,15 @@
 <script lang="ts">
+  import { onDestroy, untrack } from "svelte";
   import {
     api,
     type Change,
     type DiagramChange,
     type DiagramListing,
+    type WorkspaceView,
+    type WorkspaceViewState,
     type XmiInfo,
   } from "../lib/api";
+  import { snapshotWorkspaceState } from "../lib/views";
   import { diagramState, setSelected } from "../lib/state/diagram.svelte";
   import {
     editorState,
@@ -34,7 +38,14 @@
   import DiagramToolbar from "./DiagramToolbar.svelte";
   import ToolbarMenu from "./ToolbarMenu.svelte";
 
-  let { xmi }: { xmi: XmiInfo } = $props();
+  // `view` is the workspace view on the canvas. Its state is on the canvas
+  // already (App applies it before this mounts); this component saves it, and
+  // keeps `view.state` current so a remount (Browse → Diff → Browse) starts on
+  // the diagram the user left.
+  let {
+    xmi,
+    view = $bindable(null),
+  }: { xmi: XmiInfo; view?: WorkspaceView | null } = $props();
 
   let busy = $state(false);
   let status = $state<{ kind: "ok" | "error"; msg: string } | null>(null);
@@ -147,7 +158,20 @@
   let selected = $state<{ diagram: string; name?: string } | null>(null);
   let error = $state("");
 
+  type Picked = { diagram: string; name?: string };
+
+  function inListing(l: DiagramListing, d: Picked): boolean {
+    if (d.diagram === "class") return l.classes;
+    if (d.diagram === "package") return l.packages;
+    const names = d.diagram === "activity" ? l.activities : l.sequences;
+    return d.name !== undefined && names.includes(d.name);
+  }
+
   $effect(() => {
+    // Stay on the diagram the user was on (a re-parse, a pushed proposal), or
+    // start on the diagram of the view. The canvas state holds ids of one
+    // diagram, so a jump back to the class diagram would show nothing.
+    const wanted = untrack(() => selected ?? view?.state?.diagram ?? null);
     error = "";
     listing = null;
     changes = [];
@@ -159,7 +183,8 @@
       .diagrams(xmi.id)
       .then((l) => {
         listing = l;
-        if (l.classes) selected = { diagram: "class" };
+        if (wanted && inListing(l, wanted)) selected = wanted;
+        else if (l.classes) selected = { diagram: "class" };
         else if (l.packages) selected = { diagram: "package" };
         else if (l.activities[0]) selected = { diagram: "activity", name: l.activities[0] };
         else if (l.sequences[0]) selected = { diagram: "sequence", name: l.sequences[0] };
@@ -181,6 +206,43 @@
     diagramState.currentEdges = [];
     diagramState.revealStack = [];
   }
+
+  // ---------- auto-save of the open view ----------
+
+  // Save a moment after the last change, so a drag is one write.
+  const SAVE_DELAY_MS = 800;
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let unsaved: WorkspaceViewState | null = null;
+  // The first run reads the state the view was opened with. Nothing to save.
+  let opened = false;
+
+  function saveNow(closing = false) {
+    clearTimeout(saveTimer);
+    if (!view || !unsaved) return;
+    const state = unsaved;
+    unsaved = null;
+    api
+      .saveWorkspaceView(xmi.project_id, view.id, { state }, closing)
+      .catch((e: Error) => report("error", `The view is not saved: ${e.message}`));
+  }
+
+  $effect(() => {
+    // Read the state first: the reads are what make this run on a change.
+    const state = snapshotWorkspaceState(selected);
+    // The editor borrows the same canvas state for its own layout.
+    if (!view || !selected || editorState.mode === "edit") return;
+    if (!opened) {
+      opened = true;
+      return;
+    }
+    unsaved = state;
+    view.state = state;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, SAVE_DELAY_MS);
+  });
+
+  // Do not lose the last change to "Home" or to a closed tab.
+  onDestroy(() => saveNow());
 
   // Space jumps to the search box of the left panel, except in two cases. A
   // text field keeps the key to type a space. A control that the user reached
@@ -216,7 +278,11 @@
   );
 </script>
 
-<svelte:window onkeydown={onKey} onpointerdown={() => (tabbed = false)} />
+<svelte:window
+  onkeydown={onKey}
+  onpointerdown={() => (tabbed = false)}
+  onpagehide={() => saveNow(true)}
+/>
 
 <div class="viewer">
 <LayerDependenciesModal projectId={xmi.project_id} />
