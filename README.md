@@ -526,6 +526,18 @@ The class diagram gives you:
     reference. Each reveal runs the auto-layout again. **Step back**
     undoes the last ring. **Inspect edge** opens the two classes of the selected line.
   - **Layout**: **Re-layout** runs the auto-layout again over the visible classes.
+- **Right click** on an element opens a menu:
+  - **Hide** and **Focus** do the same as the **h** and **f** keys. They work on the whole
+    selection when the element is part of it.
+  - **Reveal in file explorer** opens the file manager on the file that declares the class.
+  - **Open in editor** opens that file in VS Code, at the line of the class, when VS Code
+    is installed. Without VS Code, it uses the application your desktop has for the file
+    type. On Windows the viewer does not open a file that Windows would run (a `.py` file,
+    for example) unless an editor is registered for it. To use a different editor, set
+    `CDEC_EDITOR` before you start `cdec ui`, for example `vim +{line} {file}`.
+
+  The two file actions run on the machine that runs `cdec ui`, and only for a request
+  from that machine.
 - **Keyboard**, on the class and package canvas. The **Keys** menu of the toolbar shows
   this list. A click on a canvas element selects it and does not move the view.
   - **Shift + click** adds an element to the selection, or takes it out. **↑ upstream**,
@@ -541,8 +553,19 @@ The class diagram gives you:
   - **f** fits the view on the selection.
   - **h** hides the selection. Press **a** and then **h** to clear the canvas.
   - **l** runs the automatic layout again.
-  - **Ctrl + c** copies the selection as text, one element on each line:
-    `Namespace.Class (path/to/File.cs)`.
+  - **Ctrl + c** copies the selection as text for a document. One element gives
+    `Namespace.Class (path/to/File.cs)`. Many elements give a Markdown list in the order
+    of the canvas, left to right. While "follow" is Inheritance, the list is nested: each
+    class is four spaces below its base type.
+
+    ```
+    - billing.Invoice (billing/invoice.py)
+        - billing.CreditNote (billing/credit_note.py)
+    - billing.Receipt (billing/receipt.py)
+    ```
+
+    Only a line between two selected classes makes a level. A class with two selected
+    base types is in the list below each of them.
   - **Space** moves to the search box of the left panel.
 
   While an element is selected, **Tab** belongs to the canvas. Press **Esc** first to move

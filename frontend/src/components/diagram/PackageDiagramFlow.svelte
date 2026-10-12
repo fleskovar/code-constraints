@@ -30,6 +30,7 @@
   } from "../../lib/state/diagram.svelte";
   import PackageNode from "./PackageNode.svelte";
   import FitOnSelect from "./FitOnSelect.svelte";
+  import NodeContextMenu from "./NodeContextMenu.svelte";
 
   let { xmi }: { xmi: XmiInfo } = $props();
 
@@ -44,6 +45,7 @@
   let error = $state("");
 
   let nodes = $state<PackageFlowNode[]>([]);
+  let contextMenu = $state<ReturnType<typeof NodeContextMenu>>();
   let edges = $state<Edge[]>([]);
 
   const NODE_WIDTH = 200;
@@ -155,6 +157,7 @@
         proOptions={{ hideAttribution: true }}
         onnodeclick={({ node, event }) =>
           event.shiftKey ? toggleSelected(node.id) : setSelected(node.id, false)}
+        onnodecontextmenu={({ node, event }) => contextMenu?.open(event, node)}
         onedgeclick={({ edge }) => onEdgeClick(edge)}
         onpaneclick={() => {
           setSelected(null);
@@ -167,6 +170,7 @@
         <MiniMap pannable zoomable />
       </SvelteFlow>
       <FitOnSelect allIds={allNodes.map((n) => n.id)} />
+      <NodeContextMenu bind:this={contextMenu} allIds={allNodes.map((n) => n.id)} />
     </SvelteFlowProvider>
   </div>
 {/if}

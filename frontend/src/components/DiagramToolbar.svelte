@@ -46,6 +46,7 @@
   const KEYS: [string, string][] = [
     ["Click", "Select an element. The view does not move."],
     ["Shift + Click", "Add an element to the selection, or take it out."],
+    ["Right click", "Open the menu of an element: hide, focus, show or open its file."],
     ["a", "Select every visible element."],
     ["Tab / Shift + Tab", "Select the next / previous element on the same level."],
     ["Tab + a", "Select every element on the same level."],
@@ -55,7 +56,7 @@
     ["f", "Fit the view on the selection."],
     ["h", "Hide the selection."],
     ["l", "Run the automatic layout again."],
-    ["Ctrl + c", "Copy the name and the file of the selection."],
+    ["Ctrl + c", "Copy the selection as text. Many elements: a Markdown list, nested by inheritance while “follow” is Inheritance."],
     ["Space", "Go to the search box."],
     ["Esc", "Clear the selection."],
   ];

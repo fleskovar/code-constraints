@@ -5,6 +5,7 @@
     cycleRevealVia,
     diagramState,
     hideMany,
+    notify,
     requestRelayout,
     reveal,
     selectMany,
@@ -15,6 +16,7 @@
     type RevealVia,
   } from "../../lib/state/diagram.svelte";
   import { siblings, stepFrom } from "../../lib/reveal";
+  import { flatOutline, inheritanceOutline } from "../../lib/outline";
 
   // Fits the viewport on request and owns the canvas keys. The Keys menu of
   // the toolbar lists them for the user (`KEYS` in DiagramToolbar.svelte).
@@ -60,16 +62,8 @@
     });
   });
 
-  // ---------- a short message at the bottom of the canvas ----------
-
+  // The element that shows `diagramState.notice`, and the way to this canvas.
   let root: HTMLElement | undefined = $state();
-  let notice = $state("");
-  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
-  function notify(message: string) {
-    notice = message;
-    clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => (notice = ""), 2200);
-  }
 
   // ---------- the selection, and moves over the graph ----------
 
@@ -239,25 +233,40 @@
     cycle(tabBack ? -1 : 1);
   }
 
-  // Ctrl+C: the selection as text for a document, one element per line:
-  // `Namespace.Class (path/to/File.cs)`. Text the user selected on the page
-  // is copied as usual.
+  // `Namespace.Class (path/to/File.cs)`: how a document names an element.
+  function describe(id: string): string {
+    const d = (getNode(id)?.data ?? {}) as {
+      name?: string;
+      qualifiedName?: string;
+      location?: { file?: string } | null;
+    };
+    const name = d.qualifiedName || d.name || id;
+    return d.location?.file ? `${name} (${d.location.file})` : name;
+  }
+
+  // Ctrl+C: the selection as text for a document. One element is its name.
+  // Several elements are a Markdown list in canvas order; while "follow" is
+  // Inheritance the list is nested, each class below its base types. Text the
+  // user selected on the page is copied as usual.
   function onCopy(e: ClipboardEvent) {
     if (!allIds || typing(e.target) || !window.getSelection()?.isCollapsed) return;
-    const ids = new Set(selection());
-    const lines = byPosition([...ids]).map((id) => {
-      const d = (getNode(id)?.data ?? {}) as {
-        name?: string;
-        qualifiedName?: string;
-        location?: { file?: string } | null;
-      };
-      const name = d.qualifiedName || d.name || id;
-      return d.location?.file ? `${name} (${d.location.file})` : name;
-    });
-    if (lines.length === 0 || !e.clipboardData) return;
-    e.clipboardData.setData("text/plain", lines.join("\n"));
+    const ids = byPosition([...new Set(selection())]);
+    if (ids.length === 0 || !e.clipboardData) return;
+    const nested = diagramState.revealVia === "inheritance";
+    const text =
+      ids.length === 1
+        ? describe(ids[0])
+        : nested
+          ? inheritanceOutline(ids, diagramState.currentEdges, describe)
+          : flatOutline(ids, describe);
+    e.clipboardData.setData("text/plain", text);
     e.preventDefault();
-    notify(lines.length === 1 ? `Copied: ${lines[0]}` : `Copied ${lines.length} elements`);
+    notify(
+      ids.length === 1
+        ? `Copied: ${text}`
+        : `Copied ${ids.length} elements as a Markdown list${nested ? ", nested by inheritance" : ""}`,
+      3000,
+    );
   }
 </script>
 
@@ -269,7 +278,7 @@
 />
 
 <div class="canvas-notice" bind:this={root} role="status" aria-live="polite">
-  {#if notice}<span>{notice}</span>{/if}
+  {#if diagramState.notice}<span>{diagramState.notice}</span>{/if}
 </div>
 
 <style>

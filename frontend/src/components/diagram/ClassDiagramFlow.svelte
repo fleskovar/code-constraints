@@ -34,6 +34,7 @@
   } from "../../lib/state/diagram.svelte";
   import ClassNode from "./ClassNode.svelte";
   import FitOnSelect from "./FitOnSelect.svelte";
+  import NodeContextMenu from "./NodeContextMenu.svelte";
   import DiagramLegend from "./DiagramLegend.svelte";
   import type { ClassFlowNode, ClassNodeData } from "./types";
   import {
@@ -44,6 +45,8 @@
   let { xmi }: { xmi: XmiInfo } = $props();
 
   const nodeTypes = { class: ClassNode };
+
+  let contextMenu = $state<ReturnType<typeof NodeContextMenu>>();
 
   // Full unfiltered model — kept once so filter changes don't trigger refetch.
   let allNodes = $state<ClassFlowNode[]>([]);
@@ -321,6 +324,7 @@
         proOptions={{ hideAttribution: true }}
         onnodeclick={({ node, event }) =>
           event.shiftKey ? toggleSelected(node.id) : setSelected(node.id, false)}
+        onnodecontextmenu={({ node, event }) => contextMenu?.open(event, node)}
         onedgeclick={({ edge }) => onEdgeClick(edge)}
         onpaneclick={() => {
           setSelected(null);
@@ -334,6 +338,11 @@
         <MiniMap pannable zoomable />
       </SvelteFlow>
       <FitOnSelect allIds={allNodes.map((n) => n.id)} />
+      <NodeContextMenu
+        bind:this={contextMenu}
+        allIds={allNodes.map((n) => n.id)}
+        xmiId={xmi.id}
+      />
     </SvelteFlowProvider>
     <DiagramLegend />
   </div>

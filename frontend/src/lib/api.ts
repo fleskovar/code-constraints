@@ -608,6 +608,13 @@ export const api = {
     }
     return res.json() as Promise<{ path: string }>;
   },
+  /** Show the source file of a class in the file manager of the desktop, or
+   *  open it in an editor. The server does this on the machine it runs on. */
+  nodeDesktopAction(xmiId: string, nodeId: string, action: "reveal" | "open"): Promise<void> {
+    return voidFetch(`/api/xmi/${xmiId}/nodes/${encodeURIComponent(nodeId)}/${action}`, {
+      method: "POST",
+    });
+  },
   /** Suggest the language of a source tree. `lang` is null when the path is
    *  not a directory or holds no known language. */
   detectLanguage(path: string): Promise<{ lang: Lang | null; is_dir: boolean }> {

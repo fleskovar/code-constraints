@@ -28,6 +28,8 @@ export interface DiagramState {
   relayoutToken: number;
   /** Bump to request the canvas fit the viewport on `selectedClassId`. */
   fitToken: number;
+  /** A short message at the bottom of the canvas. Empty: none. See `notify`. */
+  notice: string;
   /** Model-orientation edges of the active diagram (source→target as stored in
    *  `graph.edges`, NOT the render-swapped inheritance edges). Published by the
    *  active *DiagramFlow so the top toolbar can drive graph navigation. */
@@ -88,6 +90,7 @@ export const diagramState: DiagramState = $state({
   nodePositions: new Map<string, { x: number; y: number }>(),
   relayoutToken: 0,
   fitToken: 0,
+  notice: "",
   currentEdges: [] as GraphEdge[],
   revealStack: [] as RevealRing[],
   revealVia: "all" as RevealVia,
@@ -104,6 +107,15 @@ export const diagramState: DiagramState = $state({
 // ---------- mutators (free functions; all of them mutate the singleton) ----------
 
 /** Ask the class canvas to pre-filter to these qualified names once loaded. */
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Show a short message at the bottom of the canvas for `ms` milliseconds. */
+export function notify(message: string, ms = 2200): void {
+  diagramState.notice = message;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (diagramState.notice = ""), ms);
+}
+
 export function setPendingFocus(qnames: string[] | null): void {
   diagramState.pendingFocusQnames =
     qnames && qnames.length > 0 ? qnames : null;

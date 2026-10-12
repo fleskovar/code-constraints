@@ -43,7 +43,7 @@ from code_constraints.core.graph_model import (
 from code_constraints.core.xmi_reader import read_project
 from code_constraints.core.xmi_writer import build_tree as build_xmi_tree
 from code_constraints.core.xmi_writer import write_project
-from code_constraints.web import workspace
+from code_constraints.web import desktop, workspace
 
 from lxml import etree
 
@@ -927,6 +927,53 @@ def _parse_or_empty(lang: str, path: Path):
 
         return Project(source_language=lang)  # type: ignore[arg-type]
     return _parse(lang, path)
+
+
+def _require_local(request: Request) -> None:
+    """Refuse a desktop action that does not come from this machine.
+
+    The server has no login and answers any origin, so a web page the user has
+    open in another tab can call it. Opening a window on the desktop is not
+    something a remote page, or a remote client of `--host 0.0.0.0`, may ask
+    for. A browser always sends `Origin` on a cross-site POST.
+    """
+    from urllib.parse import urlparse
+
+    client = request.client.host if request.client else None
+    origin = request.headers.get("origin")
+    if not desktop.is_loopback(client) or (
+        origin is not None and not desktop.is_loopback(urlparse(origin).hostname)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="this action is available only from the machine that runs the viewer",
+        )
+
+
+@app.post("/api/xmi/{xmi_id}/nodes/{node_id}/{action}", status_code=204)
+def node_desktop_action(xmi_id: str, node_id: str, action: str, request: Request) -> Response:
+    """Show the source file of a class in the file manager (`reveal`) or open
+    it in an editor (`open`). The client names a node of a parsed model, never
+    a path: the file comes from the model and must be inside the project."""
+    if action not in ("reveal", "open"):
+        raise HTTPException(status_code=404, detail=f"unknown action: {action}")
+    _require_local(request)
+    info = _registry.project(_registry.xmi(xmi_id).project_id)
+    proj = read_project(_xmi_path(xmi_id))
+    cls = next((c for c in proj.iter_classes() if c.stable_id() == node_id), None)
+    if cls is None:
+        raise HTTPException(status_code=404, detail=f"unknown class: {node_id}")
+    if cls.location is None:
+        raise HTTPException(status_code=400, detail=f"no source file is recorded for {cls.name}")
+    try:
+        path = desktop.resolve_source_file(Path(info.path), cls.location.file)
+        if action == "reveal":
+            desktop.reveal(path)
+        else:
+            desktop.open_in_editor(path, cls.location.start_line)
+    except desktop.DesktopError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @app.get("/api/xmi/{xmi_id}/diagrams", response_model=DiagramListing)

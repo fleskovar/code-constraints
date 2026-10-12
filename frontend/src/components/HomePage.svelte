@@ -307,14 +307,18 @@
             onblur={() => submitRename(target)}
           />
         {:else}
-          <span class="view-name" title={v.name}>{v.name}</span>
-          <span class="muted">{fmtAgo(v.last_used * 1000)}</span>
+          <!-- The whole row opens the view. Rename and delete stay next to it:
+               a button inside a button is not valid. -->
           <button
-            class="open"
+            class="open-row"
             disabled={!canOpen || busyAction !== null}
             onclick={() => openView(target, v.id)}
-            title="Parse the path and continue this view">Open</button
+            title="Open “{v.name}”: parse the path and continue this view"
           >
+            <span class="view-name">{v.name}</span>
+            <span class="muted">{fmtAgo(v.last_used * 1000)}</span>
+            <span class="open-hint" aria-hidden="true">Open</span>
+          </button>
           <button
             class="ghost"
             title="Rename"
@@ -969,6 +973,33 @@
     border-color: transparent;
     color: var(--muted);
     padding: 0.15rem 0.3rem;
+  }
+  /* The row itself is the button that opens the view. */
+  ul.views button.open-row {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-color: transparent;
+    font-size: inherit;
+    text-align: left;
+  }
+  ul.views button.open-row:hover:not(:disabled),
+  ul.views button.open-row:focus-visible {
+    background: var(--hover);
+    border-color: var(--border);
+  }
+  /* The hint shows where a click on the row leads. */
+  ul.views .open-hint {
+    font-size: 0.72rem;
+    color: var(--accent);
+    opacity: 0;
+  }
+  ul.views button.open-row:hover:not(:disabled) .open-hint,
+  ul.views button.open-row:focus-visible .open-hint {
+    opacity: 1;
   }
   ul.views button:disabled,
   .recent-actions button:disabled {

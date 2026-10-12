@@ -681,6 +681,11 @@ cdec ui [--host 127.0.0.1] [--port 8765] [--no-browser]
 
 `cdec serve` is the old name of this command. It still works as a hidden alias.
 
+**Open in editor** in the menu of a class uses VS Code when VS Code is installed, for every
+file type. Without VS Code, the viewer uses the application of the desktop for the file
+type. `CDEC_EDITOR` sets a different command. `{file}` and `{line}` are replaced with the
+file and the line of the class, for example `vim +{line} {file}`.
+
 The viewer creates a `.cdec_cache/` folder in the directory where you start it. The folder
 holds the parse cache, the list of recent paths (`recent.json`) and the views of each path
 (`<project>/views/*.json`). The viewer saves a view while you work. The folder contains a
