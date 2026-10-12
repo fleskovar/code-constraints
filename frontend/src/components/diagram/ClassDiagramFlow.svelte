@@ -99,11 +99,18 @@
   $effect(() => {
     const filter = diagramState.visibleClassIds;
     // Level-of-detail: at the `far` tier, drop derived classes and hide edges.
-    const far = diagramState.lodEnabled && diagramState.lodTier === "far";
+    // Only in the unfiltered overview. A filter is the user's own choice of
+    // classes: dropping those leaves an empty canvas with nothing to fit, so
+    // the zoom, and with it the tier, can never recover.
+    const far =
+      diagramState.lodEnabled && diagramState.lodTier === "far" && filter === null;
     const dropped = far ? derivedIds : null;
+    // The selected class stays for the same reason: FitOnSelect must find it.
+    const selected = far ? diagramState.selectedClassId : null;
     const visibleN = allNodes.filter(
       (n) =>
-        (filter === null || filter.has(n.id)) && !(dropped && dropped.has(n.id)),
+        (filter === null || filter.has(n.id)) &&
+        !(dropped && dropped.has(n.id) && n.id !== selected),
     );
     const visibleIds = new Set(visibleN.map((n) => n.id));
     const overrides = diagramState.nodePositions;

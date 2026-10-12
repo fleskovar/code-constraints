@@ -111,7 +111,9 @@
         <button
           onclick={() => reveal("up", diagramState.currentEdges)}
           disabled={!hasSelection}
-          title="Reveal one more ring of upstream neighbours (things that depend on the visible elements)"
+          title={kind === "class"
+            ? "Reveal one more ring above the visible classes: their base classes, and the classes that reference them"
+            : "Reveal one more ring of upstream neighbours (things that depend on the visible elements)"}
         >
           ↑ upstream
         </button>
@@ -129,7 +131,9 @@
         <button
           onclick={() => reveal("down", diagramState.currentEdges)}
           disabled={!hasSelection}
-          title="Reveal one more ring of downstream neighbours (things the visible elements depend on)"
+          title={kind === "class"
+            ? "Reveal one more ring below the visible classes: the classes derived from them, and the classes they reference"
+            : "Reveal one more ring of downstream neighbours (things the visible elements depend on)"}
         >
           ↓ downstream
         </button>

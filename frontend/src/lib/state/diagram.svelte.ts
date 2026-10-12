@@ -5,6 +5,7 @@
 // event bus.
 
 import type { ClassGraphEdge } from "../api";
+import { revealRing } from "../reveal";
 
 /** A directed graph edge — only source/target are required for graph traversal. */
 export interface GraphEdge {
@@ -53,8 +54,9 @@ export interface DiagramState {
 }
 
 /** Zoom-driven detail tiers. `full` = everything; `mid` = header-only nodes,
- *  edges still drawn; `far` = header-only nodes, edges hidden, derived classes
- *  hidden (overview of base/standalone types only). */
+ *  edges still drawn; `far` = header-only nodes, plus, while no visibility
+ *  filter is set, edges hidden and derived classes hidden (overview of
+ *  base/standalone types only). */
 export type LodTier = "full" | "mid" | "far";
 
 export type RevealDirection = "up" | "down";
@@ -200,37 +202,21 @@ export function focusOn(rootId: string): void {
 }
 
 /** Grow the visible set by one directed ring around every currently-visible
- *  node. `down` follows source→target (dependencies / parents); `up` follows
- *  target→source (dependents / children). `revealVia` limits class edges to
- *  one kind. Newly-added ids are pushed onto
- *  `revealStack` so Collapse can remove them. No-op while everything is shown
+ *  node (see `revealRing` for what each direction follows). Newly-added ids
+ *  are pushed onto `revealStack` so Collapse can remove them, and the canvas
+ *  re-runs its layout. No-op while everything is shown
  *  (`visibleClassIds === null`). */
 export function reveal(direction: RevealDirection, edges: GraphEdge[]): void {
   const cur = diagramState.visibleClassIds;
   if (cur === null) return;
-  const via = diagramState.revealVia;
-  const adj = new Map<string, Set<string>>();
-  for (const e of edges) {
-    // Edges without a kind (package dependencies) are always followed.
-    if (via !== "all" && e.kind && e.kind !== via) continue;
-    const from = direction === "down" ? e.source : e.target;
-    const to = direction === "down" ? e.target : e.source;
-    if (!adj.has(from)) adj.set(from, new Set());
-    adj.get(from)!.add(to);
-  }
-  const added: string[] = [];
-  const next = new Set(cur);
-  for (const id of cur) {
-    for (const n of adj.get(id) ?? []) {
-      if (!next.has(n)) {
-        next.add(n);
-        added.push(n);
-      }
-    }
-  }
+  const added = revealRing(cur, edges, direction, diagramState.revealVia);
   if (added.length === 0) return;
   diagramState.revealStack = [...diagramState.revealStack, { direction, ids: added }];
-  diagramState.visibleClassIds = next;
+  diagramState.visibleClassIds = new Set([...cur, ...added]);
+  // A revealed node still holds its position from the full-graph layout, which
+  // can be tens of thousands of pixels from its neighbour. Lay out the visible
+  // subgraph again so the new ring lands next to the nodes that revealed it.
+  requestRelayout();
 }
 
 /** Undo the most recent reveal ring, or the most recent ring of `direction`

@@ -495,7 +495,10 @@ viewer at http://127.0.0.1:8765 without a project. The class diagram gives you:
   - **Visibility**: the **Display** menu (members, relationship lines, level of detail),
     and **Show all** / **Hide all** for the classes or for one kind of line.
   - **Explore**: **Isolate** shows only the selected class. **↑ upstream** and
-    **↓ downstream** reveal one ring of neighbours, and **−** hides it again. **Step back**
+    **↓ downstream** reveal one ring of neighbours, and **−** hides it again. The arrows
+    follow the canvas: **↓ downstream** reveals the derived classes and the referenced
+    classes, **↑ upstream** reveals the base classes and the classes that hold a
+    reference. Each reveal runs the auto-layout again. **Step back**
     undoes the last ring. **Inspect edge** opens the two classes of the selected line.
   - **Layout**: **Re-layout** runs the auto-layout again over the visible classes.
 - **Architecture** menu: **Layers & rules** shows the layers and their allowed

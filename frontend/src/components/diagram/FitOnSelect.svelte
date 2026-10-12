@@ -11,8 +11,13 @@
     // Defer one tick so fitView doesn't write into SvelteFlow's internal node
     // store while we're still inside the user-state effect (which xyflow
     // otherwise warns about as a synchronous update during render).
+    //
+    // Neither fit here takes a `duration`. An animated fit flies through a far
+    // lower zoom on its way, and a node that mounts mid-flight restarts it. The
+    // interrupted flight reports that transit zoom to `onmoveend`, the detail
+    // tier changes, every node is re-seeded, and the flight can stop half way.
     queueMicrotask(() => {
-      void fitView({ nodes: [{ id }], padding: 0.3, duration: 400, maxZoom: 1.3 });
+      void fitView({ nodes: [{ id }], padding: 0.3, maxZoom: 1.3 });
     });
   });
 
@@ -24,7 +29,7 @@
     if (token === 0) return;
     queueMicrotask(() => {
       queueMicrotask(() => {
-        void fitView({ padding: 0.2, duration: 500 });
+        void fitView({ padding: 0.2 });
       });
     });
   });
