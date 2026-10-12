@@ -21,6 +21,7 @@ options of each rule type are in `./rules.md`.
 | 13 | [Complexity budget](#13-complexity-budget) | `max-class-fanout` + `dangling-classes` |
 | 14 | [Guardrails that stay](#14-guardrails-that-stay) | `frozen-rules` |
 | 15 | [A fast set and a full set](#15-a-fast-set-and-a-full-set) | `.cdec/rules/*.yaml` |
+| 16 | [Closed set of building blocks](#16-closed-set-of-building-blocks) | `new-class-constraints` |
 
 ---
 
@@ -307,6 +308,9 @@ The interface is stable."
 The same recipe works for a family of commands, handlers, notifiers or observers. Change
 the base name and the pattern.
 
+This recipe controls the classes that join the family. To make each new class join a
+family, add recipe 16.
+
 ## 10. Published contract
 
 **Decision:** "Other systems use `api.*`. Its classes and its methods do not disappear or
@@ -357,6 +361,9 @@ This is the rule that makes the architecture-first workflow binding.
 **Softer variant:** list only some categories, for example
 `categories: [class-removed, operation-removed, operation-signature-changed]`. Then new
 classes and new members pass, and removed or changed ones fail.
+
+To permit a new class that extends an approved base, use recipe 16 in place of
+`no-new-classes`.
 
 ## 12. Settled implementation
 
@@ -448,6 +455,51 @@ cdec check                        # in CI: each file
 
 Each file has a `rules:` list and nothing else. The exception keys are the same in the two
 runs.
+
+## 16. Closed set of building blocks
+
+**Decision:** "A new class in this subsystem extends `Notifier` or `Channel`. A different
+kind of class needs the approval of the architect."
+
+```yaml
+  - id: new-classes-use-the-building-blocks
+    type: new-class-constraints
+    severity: error
+    scope: diff
+    bases: ["Notifier", "Channel"]
+    python:
+      forbid_metaclass: ["*"]
+    csharp:
+      require_modifiers: ["sealed"]
+    ignore: ["tests.**"]
+    message: |
+      Class '{qualified_name}' {reason}. A new class in this subsystem extends
+      `Notifier` or `Channel`. To add a different building block, propose it
+      first: add it to the model and run `cdec propose`.
+```
+
+The rule examines only a class that is not in the baseline. A baseline class passes, also
+when it has no approved base. Thus the rule can start on old code with no exceptions.
+
+Put a constraint that exists in one language in the block of that language. `cdec check`
+ignores the block of a different language. Keep only the block of the project language, or
+keep the two blocks when one entry serves projects in the two languages.
+
+**Passes:** `class SmsNotifier(Notifier)`. `class HtmlEmailNotifier(EmailNotifier)` also
+passes, because `EmailNotifier` extends `Notifier`.
+
+**Fails:** `class RetryPolicy:` has no approved base.
+`class PushNotifier(Notifier, metaclass=Registry)` declares a metaclass. Each broken
+constraint is one issue with its own key.
+
+To approve one class that breaks the rule, a person runs
+`cdec exceptions allow <key> --reason "..."`. To approve a new building block, add its name
+to `bases` also.
+
+**Trap:** the baseline decides which classes are new. The rule needs `.cdec/reference.xmi`
+or `--base-ref`. With no baseline, the rule is skipped. After a person approves
+`cdec reference set <model>`, each class of that model is a baseline class, and the rule
+does not examine it again. Correct the open issues before the reference changes.
 
 ---
 
