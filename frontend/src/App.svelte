@@ -16,7 +16,7 @@
   let mode = $state<Mode>("browse");
   let editorOnly = $state(false);
   let error = $state("");
-  // `cdec serve parse` deep-links here with ?path=&lang=; auto-run the parse.
+  // `cdec ui parse` deep-links here with ?path=&lang=; auto-run the parse.
   let autoloading = $state(false);
   let autoloadPath = $state("");
 
@@ -103,7 +103,7 @@
     proposalTimer = null;
   }
 
-  // Deep-link entry: `cdec serve parse` opens /?path=<dir>&lang=<lang>. Run the
+  // Deep-link entry: `cdec ui parse` opens /?path=<dir>&lang=<lang>. Run the
   // same register+parse flow HomePage uses, then land on the class diagram.
   onMount(async () => {
     const q = new URLSearchParams(window.location.search);

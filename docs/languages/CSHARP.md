@@ -43,7 +43,7 @@ the source text says, not on what the compiler would resolve.
 
 ```bash
 cdec parse examples/csharp_demo --lang csharp --out demo.xmi
-cdec serve            # http://127.0.0.1:8765
+cdec ui            # http://127.0.0.1:8765
 ```
 
 ---
@@ -181,7 +181,7 @@ public void HandleLogin(User u) {
 // </uml-sequence>
 ```
 
-Open the viewer with `cdec serve` and pick the sequence by name. Class, package,
+Open the viewer with `cdec ui` and pick the sequence by name. Class, package,
 activity and sequence diagrams all render on the interactive SvelteFlow canvas.
 
 ---

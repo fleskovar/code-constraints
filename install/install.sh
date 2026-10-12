@@ -182,6 +182,6 @@ info "code-constraints is installed at $REPO_DIR"
 echo
 echo "Try:"
 echo "    uml --help"
-echo "    cdec serve        # web viewer at http://127.0.0.1:8765"
+echo "    cdec ui        # web viewer at http://127.0.0.1:8765"
 echo
 echo "To update later, just run this installer again."

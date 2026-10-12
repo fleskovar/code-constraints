@@ -144,7 +144,7 @@
   <div class="split">
     <div class="canvas-cell">
       <EditorFlowView
-        onnodeclickid={(id) => setSelected(id)}
+        onnodeclickid={(id) => setSelected(id, false)}
         onpaneclick={() => setSelected(null)}
         onnodedragstop={onDragStop}
         onconnect={onConnect}

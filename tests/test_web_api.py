@@ -514,7 +514,7 @@ def test_diff_against_unavailable_history_is_a_client_error(
 ) -> None:
     """Asking to diff a ref whose objects were never fetched is a 400, not a 500.
 
-    Anyone running `cdec serve` inside a shallow clone hits this from the
+    Anyone running `cdec ui` inside a shallow clone hits this from the
     quick-diff card, so it has to fail with an explanation rather than a
     stack trace.
     """

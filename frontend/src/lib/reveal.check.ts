@@ -12,18 +12,33 @@ const edges = [
   inh("Gate", "Base"),
   inh("Lava", "Base"),
   inh("FastGate", "Gate"),
+  inh("HotLava", "Lava"),
   ref("Base", "World"),
   ref("Tests", "Base"),
 ];
-const ring = (visible: string[], dir: "up" | "down", via: "all" | "inheritance" | "association") =>
-  revealRing(new Set(visible), edges, dir, via);
+// Every visible node is a seed, unless the test names the seeds.
+const ring = (
+  visible: string[],
+  dir: "up" | "down",
+  via: "all" | "inheritance" | "association",
+  seeds: string[] = visible,
+) => revealRing(new Set(visible), seeds, edges, dir, via);
 
 // Down on a base class reveals every class derived from it, not only the first.
 assert.deepEqual(ring(["Base"], "down", "inheritance"), ["Platform", "Gate", "Lava"]);
 // Up reveals the base types.
 assert.deepEqual(ring(["Base"], "up", "inheritance"), ["IThing"]);
 // A second step goes one ring further and skips what is visible already.
-assert.deepEqual(ring(["Base", "Platform", "Gate", "Lava"], "down", "inheritance"), ["FastGate"]);
+assert.deepEqual(ring(["Base", "Platform", "Gate", "Lava"], "down", "inheritance"), ["FastGate", "HotLava"]);
+
+// The ring grows from the selection only. Gate and Lava are both visible and
+// both have a subclass; a step from Gate must not reveal the subclass of Lava.
+const family = ["Base", "Platform", "Gate", "Lava"];
+assert.deepEqual(ring(family, "down", "inheritance", ["Gate"]), ["FastGate"]);
+assert.deepEqual(ring(family, "down", "inheritance", ["Lava"]), ["HotLava"]);
+assert.deepEqual(ring(family, "down", "inheritance", ["Gate", "Lava"]), ["FastGate", "HotLava"]);
+// A selected node that is hidden reveals nothing.
+assert.deepEqual(ring(["Base"], "down", "inheritance", ["Gate"]), []);
 
 // References keep their stored direction: down is the referenced type.
 assert.deepEqual(ring(["Base"], "down", "association"), ["World"]);
@@ -35,7 +50,7 @@ assert.deepEqual(new Set(ring(["Base"], "up", "all")), new Set(["IThing", "Tests
 
 // Package edges carry no kind: every `via` follows them, in the stored direction.
 const pkg = [{ source: "app", target: "core" }];
-assert.deepEqual(revealRing(new Set(["app"]), pkg, "down", "inheritance"), ["core"]);
-assert.deepEqual(revealRing(new Set(["core"]), pkg, "up", "association"), ["app"]);
+assert.deepEqual(revealRing(new Set(["app"]), ["app"], pkg, "down", "inheritance"), ["core"]);
+assert.deepEqual(revealRing(new Set(["core"]), ["core"], pkg, "up", "association"), ["app"]);
 
 console.log("reveal: ok");

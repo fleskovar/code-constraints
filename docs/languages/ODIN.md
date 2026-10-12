@@ -99,7 +99,7 @@ Without this a tag on a free procedure would be silently dropped.
 
 ```bash
 cdec parse examples/odin_demo --lang odin --out odin.xmi
-cdec serve            # http://127.0.0.1:8765 — register the folder, pick "odin"
+cdec ui            # http://127.0.0.1:8765 — register the folder, pick "odin"
 ```
 
 `--lang` is optional when the tree is unambiguous; `.odin` files are detected automatically.

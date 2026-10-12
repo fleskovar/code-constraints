@@ -4,7 +4,7 @@
     {
       "name": "cdecserve",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "code_constraints.cli", "serve", "--port", "8766"],
+      "runtimeArgs": ["-m", "code_constraints.cli", "ui", "--port", "8766", "--no-browser"],
       "port": 8766
     }
   ]

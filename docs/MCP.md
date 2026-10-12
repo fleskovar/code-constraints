@@ -219,7 +219,7 @@ model refreshes the already-open browser tab in place:
 ```
 
 `cdec_propose` returns a `url`; hand it to the user so they can look at the
-diagram. It starts `cdec serve` in the background when nothing is listening on
+diagram. It starts `cdec ui` in the background when nothing is listening on
 the port (pass `start_viewer=false` to require an already-running viewer).
 
 ## Troubleshooting

@@ -203,7 +203,7 @@ serve: ## Start the web server (HOST/PORT overridable)
 	@if [ ! -f "$(FRONTEND)/dist/index.html" ]; then \
 	  echo "warning: $(FRONTEND)/dist not built — run 'make frontend-build'"; \
 	fi
-	$(CDEC) serve --host $(HOST) --port $(PORT)
+	$(CDEC) ui --host $(HOST) --port $(PORT)
 
 # Every language with rule-tag support ships a demo with the same shape: a
 # tagged billing slice, a committed lock, and one seeded conformance violation.

@@ -42,7 +42,7 @@ the synthetic `static` module class that Odin, Lua and Julia use.
 
 ```bash
 cdec parse examples/python_demo --lang python --out demo.xmi
-cdec serve            # http://127.0.0.1:8765
+cdec ui            # http://127.0.0.1:8765
 ```
 
 `--lang` is auto-detected from the file mix when omitted.

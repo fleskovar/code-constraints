@@ -41,7 +41,7 @@ If `cdec` is not on `PATH`, use `python -m code_constraints.cli <command>`.
 `cdec propose` uses a viewer that runs on port 8765. If no viewer runs, `cdec propose`
 starts one itself and does not return. That blocks your shell.
 
-- Start the viewer as a background process before the first push: `cdec serve`.
+- Start the viewer as a background process before the first push: `cdec ui --no-browser`.
 - Then each `cdec propose` returns immediately and prints the URL.
 - If you have the MCP tools, `cdec_propose` starts the viewer for you and returns the URL.
 
@@ -137,7 +137,7 @@ constraint tag with arguments to the model. The form of the arguments is exact.
 
 | Problem | Cause and solution |
 | --- | --- |
-| `cdec propose` does not return. | No viewer was in operation, so the command started one. Start `cdec serve` in the background first. |
+| `cdec propose` does not return. | No viewer was in operation, so the command started one. Start `cdec ui --no-browser` in the background first. |
 | The tab does not refresh. | You changed `--source` or `--lang` between pushes. Use the same values. |
 | A new class has no edge to its base. | `bases` must name a class of the model, as the source writes the name. An unknown name shows as an external node. |
 | The viewer does not start on port 8000. | The default port is 8765. Do not use 8000. Some Windows machines reserve it. |

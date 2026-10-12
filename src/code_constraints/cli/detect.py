@@ -1,4 +1,4 @@
-"""Heuristic source-language detection for `cdec serve parse`.
+"""Heuristic source-language detection for `cdec ui parse`.
 
 When the user doesn't pass `--lang`, we guess the project's language from the
 mix of file extensions in the tree. The rule (per spec):

@@ -38,7 +38,7 @@ After installing, open a **new terminal** so the PATH change takes effect, then:
 
 ```bash
 cdec --help
-cdec serve        # web viewer at http://127.0.0.1:8765
+cdec ui        # web viewer at http://127.0.0.1:8765
 ```
 
 ## Configuration
@@ -63,7 +63,7 @@ CDEC_HOME=/opt/code-constraints ./install/install.sh
 $CDEC_HOME/
   repo/                 # the git checkout (updated in place on re-run)
     .venv/              # dedicated Python virtualenv
-    frontend/dist/      # built web UI that `cdec serve` mounts
+    frontend/dist/      # built web UI that `cdec ui` mounts
 ```
 
 The `cdec` command points back into `repo/.venv`:

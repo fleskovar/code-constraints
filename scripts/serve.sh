@@ -32,4 +32,4 @@ if [[ ! -f frontend/dist/index.html ]]; then
 fi
 
 echo "Serving on http://${host}:${port}"
-"$py" -m code_constraints.cli serve --host "$host" --port "$port"
+"$py" -m code_constraints.cli ui --host "$host" --port "$port"

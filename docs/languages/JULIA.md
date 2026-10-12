@@ -101,7 +101,7 @@ every module in one file share one class, and a tag on them is never dropped.
 
 ```bash
 cdec parse examples/julia_demo --lang julia --out julia.xmi
-cdec serve            # http://127.0.0.1:8765 — register the folder, pick "julia"
+cdec ui            # http://127.0.0.1:8765 — register the folder, pick "julia"
 ```
 
 ---

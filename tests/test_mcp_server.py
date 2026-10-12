@@ -470,3 +470,17 @@ def test_propose_refuses_rather_than_blocking_when_no_viewer_runs(project) -> No
     _call(project, "cdec_parse", out="target.json")
     with pytest.raises(ToolError, match="no code-constraints viewer"):
         _call(project, "cdec_propose", model="target.json", start_viewer=False, port=8791)
+
+
+def test_viewer_spawn_does_not_open_a_browser(monkeypatch, tmp_path):
+    """`cdec ui` opens the browser by default. An agent that starts the viewer
+    must not pop a window: the tool returns the URL instead."""
+    import subprocess
+
+    from code_constraints.mcp import server
+
+    seen: dict = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: seen.update(argv=argv))
+    server._spawn_viewer("127.0.0.1", 8765, tmp_path)
+    assert seen["argv"][3] == "ui"
+    assert "--no-browser" in seen["argv"]

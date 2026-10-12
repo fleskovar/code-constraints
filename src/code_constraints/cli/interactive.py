@@ -42,7 +42,7 @@ def run_interactive(path: Path) -> None:
         console.print(
             "[yellow]cdec[/] needs an interactive terminal. "
             "Run a subcommand instead, e.g. [bold]cdec --help[/], "
-            "[bold]cdec serve parse .[/], or [bold]cdec check[/]."
+            "[bold]cdec ui parse .[/], or [bold]cdec check[/]."
         )
         return
 

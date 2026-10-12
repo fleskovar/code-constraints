@@ -85,7 +85,7 @@ against the method bodies.
 # Visualise: serve and load the folder (language "csharp"). The package diagram
 # shows controller → view → model with no cycle; the class diagram shows the
 # [layer]/[immutable]/[sealed] badges.
-.venv/Scripts/python.exe -m code_constraints.cli serve   # → http://127.0.0.1:8765
+.venv/Scripts/python.exe -m code_constraints.cli ui   # → http://127.0.0.1:8765
 ```
 
 > The harness only **parses** the C# — there's no `.csproj` and the code isn't

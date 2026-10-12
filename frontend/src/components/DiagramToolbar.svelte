@@ -42,6 +42,9 @@
   );
 
   const hasSelection = $derived(diagramState.selectedClassId !== null);
+  // A reveal grows from the selection, and `a` selects without a single
+  // selected element.
+  const canReveal = $derived(hasSelection || diagramState.highlightedNodeIds.size > 0);
   const hasEdgeSelection = $derived(diagramState.selectedEdgeId !== null);
 </script>
 
@@ -110,10 +113,10 @@
       <span class="split">
         <button
           onclick={() => reveal("up", diagramState.currentEdges)}
-          disabled={!hasSelection}
+          disabled={!canReveal}
           title={kind === "class"
-            ? "Reveal one more ring above the visible classes: their base classes, and the classes that reference them"
-            : "Reveal one more ring of upstream neighbours (things that depend on the visible elements)"}
+            ? "Reveal one more ring above the selected classes: their base classes, and the classes that reference them"
+            : "Reveal one more ring of upstream neighbours (things that depend on the selected elements)"}
         >
           ↑ upstream
         </button>
@@ -130,10 +133,10 @@
       <span class="split">
         <button
           onclick={() => reveal("down", diagramState.currentEdges)}
-          disabled={!hasSelection}
+          disabled={!canReveal}
           title={kind === "class"
-            ? "Reveal one more ring below the visible classes: the classes derived from them, and the classes they reference"
-            : "Reveal one more ring of downstream neighbours (things the visible elements depend on)"}
+            ? "Reveal one more ring below the selected classes: the classes derived from them, and the classes they reference"
+            : "Reveal one more ring of downstream neighbours (things the selected elements depend on)"}
         >
           ↓ downstream
         </button>
@@ -173,6 +176,12 @@
         Re-layout
       </button>
     </div>
+    <span
+      class="keys"
+      title="Keyboard: f fits the view on the selection. a selects every visible element. h hides the selection. Space moves to the search box."
+    >
+      <kbd>f</kbd> focus <kbd>a</kbd> select all <kbd>h</kbd> hide <kbd>Space</kbd> search
+    </span>
   </div>
 {/if}
 
@@ -238,6 +247,20 @@
   .diagram-tools button:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  .keys {
+    font-size: 0.7rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .keys kbd {
+    font: inherit;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 0.25rem;
+    margin-left: 0.35rem;
+    background: var(--surface);
+    color: var(--fg);
   }
   .group-label {
     font-size: 0.65rem;

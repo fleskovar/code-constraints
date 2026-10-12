@@ -182,6 +182,31 @@
     diagramState.revealStack = [];
   }
 
+  // Space jumps to the search box of the left panel, except in two cases. A
+  // text field keeps the key to type a space. A control that the user reached
+  // with Tab keeps it too, because Space is how the keyboard activates a button
+  // or a checkbox. A control that only holds the focus after a mouse click does
+  // not: the user is on the canvas, not on that control. `:focus-visible`
+  // cannot tell the two apart, Chrome turns it on at the first key press.
+  let tabbed = false;
+  function onKey(e: KeyboardEvent) {
+    if (e.key === "Tab") tabbed = true;
+    if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target as Element | null;
+    if (
+      t?.closest?.(
+        "input:not([type=checkbox]):not([type=radio]), textarea, [contenteditable]",
+      )
+    )
+      return;
+    if (tabbed && t?.closest?.("input, select, button, summary, a")) return;
+    const box = document.querySelector<HTMLInputElement>('.search input[type="search"]');
+    if (!box) return;
+    e.preventDefault();
+    box.focus();
+    box.select();
+  }
+
   const toolbarKind = $derived<"class" | "package" | "other">(
     selected?.diagram === "class"
       ? "class"
@@ -190,6 +215,8 @@
         : "other",
   );
 </script>
+
+<svelte:window onkeydown={onKey} onpointerdown={() => (tabbed = false)} />
 
 <div class="viewer">
 <LayerDependenciesModal projectId={xmi.project_id} />

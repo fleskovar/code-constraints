@@ -925,28 +925,36 @@ def exceptions_prune(
         typer.echo(f"wrote {collected.ledger_path}")
 
 
-serve_app = typer.Typer(
+ui_app = typer.Typer(
     invoke_without_command=True,
-    help="Run the local web viewer (FastAPI + Svelte SPA).",
+    help="Run the local web viewer (FastAPI + Svelte SPA) and open it in the browser.",
 )
-app.add_typer(serve_app, name="serve")
+app.add_typer(ui_app, name="ui")
+# `serve` was the first name of this command. It stays as a hidden alias so an
+# existing script or agent instruction still starts the viewer.
+app.add_typer(ui_app, name="serve", hidden=True)
 
 
-@serve_app.callback()
-def _serve_default(
+@ui_app.callback()
+def _ui_default(
     ctx: typer.Context,
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port"),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Start the viewer and do not open the browser."
+    ),
 ) -> None:
-    """Start the web viewer. `cdec serve parse` parses the CWD and opens it."""
+    """Start the web viewer and open it. `cdec ui parse` parses the CWD and opens it."""
     # A subcommand (e.g. `parse`) was given — let it handle everything.
     if ctx.invoked_subcommand is not None:
         return
-    _run_server(host, port)
+    url = _viewer_url(host, port)
+    typer.echo(f"viewer at {url}")
+    _run_server(host, port, open_url=None if no_browser else url)
 
 
-@serve_app.command("parse")
-def serve_parse(
+@ui_app.command("parse")
+def ui_parse(
     path: Path = typer.Argument(
         Path("."),
         exists=True,
@@ -960,7 +968,7 @@ def serve_parse(
         help="python | csharp | typescript | svelte | odin | lua | julia. Auto-detected if omitted.",
     ),
     host: str = typer.Option("127.0.0.1", "--host"),
-    port: int = typer.Option(8765, "--port", help="Pass after `parse`, e.g. `serve parse --port 9000`."),
+    port: int = typer.Option(8765, "--port", help="Pass after `parse`, e.g. `ui parse --port 9000`."),
 ) -> None:
     """Start the viewer and open straight to the class diagram of a codebase.
 
@@ -978,7 +986,7 @@ def serve_parse(
     if chosen not in SUPPORTED_LANGUAGES:
         raise typer.BadParameter(f"unsupported language: {chosen}")
 
-    url = f"http://{host}:{port}/?path={quote(str(root))}&lang={chosen}"
+    url = f"{_viewer_url(host, port)}?path={quote(str(root))}&lang={chosen}"
     typer.echo(f"serving {root} as {chosen}; opening the class diagram at {url}")
     _run_server(host, port, open_url=url)
 
@@ -1025,7 +1033,7 @@ def propose(
     viewer tab in place — no new tabs, no manual reload. Once agreed, lock it
     with `cdec reference set model.json`.
 
-    If a `cdec serve` instance is already running on the port it is reused;
+    If a `cdec ui` instance is already running on the port it is reused;
     otherwise a server is started (blocking) with the proposal pre-loaded.
     """
     if against not in ("source", "reference", "none"):
@@ -1590,6 +1598,16 @@ def _resolve_reference_inputs(
         ref_path = config_dir / REFERENCE_FILENAME
 
     return source_path, chosen_lang, ref_path
+
+
+def _viewer_url(host: str, port: int) -> str:
+    """The URL a browser on this machine uses to reach the viewer.
+
+    A wildcard bind address is a listen address, not a destination: a browser
+    cannot open `http://0.0.0.0:8765/`.
+    """
+    browser_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    return f"http://{browser_host}:{port}/"
 
 
 def _run_server(host: str, port: int, open_url: Optional[str] = None) -> None:

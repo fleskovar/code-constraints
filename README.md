@@ -28,7 +28,7 @@ root of the repository. For other languages, change `--lang` and see the
 ### 1. Look at the class diagram
 
 ```bash
-cdec serve parse src
+cdec ui parse src
 ```
 
 This parses `src/`, starts the viewer at http://127.0.0.1:8765, and opens the class
@@ -484,8 +484,9 @@ CLI prints, so an agent and a person can share one workflow.
 
 ## Interactive viewer
 
-`cdec serve parse [PATH]` opens the class diagram of a codebase. `cdec serve` starts the
-viewer at http://127.0.0.1:8765 without a project. The class diagram gives you:
+`cdec ui parse [PATH]` opens the class diagram of a codebase. `cdec ui` starts the
+viewer at http://127.0.0.1:8765 without a project and opens it in the browser. Add
+`--no-browser` to start the viewer only. The class diagram gives you:
 
 - **Class tree**: classes grouped by package and by kind, with search and a visibility
   checkbox on each package, kind and class. Click a class to centre the canvas on it.
@@ -495,12 +496,19 @@ viewer at http://127.0.0.1:8765 without a project. The class diagram gives you:
   - **Visibility**: the **Display** menu (members, relationship lines, level of detail),
     and **Show all** / **Hide all** for the classes or for one kind of line.
   - **Explore**: **Isolate** shows only the selected class. **↑ upstream** and
-    **↓ downstream** reveal one ring of neighbours, and **−** hides it again. The arrows
+    **↓ downstream** reveal one ring of neighbours of the selection, and **−** hides it
+    again. Press **a** first to reveal from every visible class. The arrows
     follow the canvas: **↓ downstream** reveals the derived classes and the referenced
     classes, **↑ upstream** reveals the base classes and the classes that hold a
     reference. Each reveal runs the auto-layout again. **Step back**
     undoes the last ring. **Inspect edge** opens the two classes of the selected line.
   - **Layout**: **Re-layout** runs the auto-layout again over the visible classes.
+- **Keyboard**, on the class and package canvas. A click on a canvas element selects it
+  and does not move the view.
+  - **f** fits the view on the selection.
+  - **a** selects every visible element.
+  - **h** hides the selection. Press **a** and then **h** to clear the canvas.
+  - **Space** moves to the search box of the left panel.
 - **Architecture** menu: **Layers & rules** shows the layers and their allowed
   dependencies. **Set as reference** saves the current diagram as `.cdec/reference.xmi`
   after a confirmation.
@@ -575,7 +583,7 @@ Each command also runs as `python -m code_constraints.cli <command>`. The
 | `cdec check -A rules\|locks\|reference\|all` | Accept the current state instead of a failure (`--automatic-exceptions`). `--target GLOB` limits `-A locks` to the named elements. |
 | `cdec exceptions …` | Accept, list, remove and prune individual issues by key. |
 | `cdec locks` | Show what is lockable and what is locked (read-only). |
-| `cdec serve` / `cdec serve parse` | Start the web viewer / open the class diagram of a codebase. |
+| `cdec ui` / `cdec ui parse` | Start the web viewer / open the class diagram of a codebase. |
 | `cdec parse` | Parse source into a model file (`.xmi` or `.json`). |
 | `cdec convert` | Convert a model between XMI 2.1 and editor JSON. |
 | `cdec propose` | Show a proposed model in the viewer, as a diff. `--against source\|reference\|none`. |
@@ -670,6 +678,6 @@ npm run build    # production build into frontend/dist/
 npm run check    # svelte-check (TypeScript)
 ```
 
-Run `cdec serve` and `npm run dev` together. Vite sends `/api/*` to the backend.
-`cdec serve` serves the built bundle in `frontend/dist/`. After a frontend edit, run
+Run `cdec ui` and `npm run dev` together. Vite sends `/api/*` to the backend.
+`cdec ui` serves the built bundle in `frontend/dist/`. After a frontend edit, run
 `npm run build` again, or the server continues to show the old build.

@@ -25,7 +25,7 @@ Cross-package dependencies the package diagram should highlight:
 Web UI:
 
 ```bash
-.venv/Scripts/python.exe -m code_constraints.cli serve
+.venv/Scripts/python.exe -m code_constraints.cli ui
 # → http://127.0.0.1:8765
 ```
 

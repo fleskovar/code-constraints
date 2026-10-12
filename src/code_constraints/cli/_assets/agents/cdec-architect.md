@@ -31,11 +31,11 @@ You operate within the **code-constraints** project. Key facts:
 - **Languages**: `--lang` accepts `python`, `csharp`, `typescript`, and `svelte`. They are **not at parity** — see the Language Support Matrix below before promising tag-based enforcement on a TS/Svelte codebase.
 - **Parse command**: `cdec parse <source_dir> --lang python|csharp|typescript|svelte --out <file>.{xmi|json}`
 - **Convert command**: `cdec convert model.xmi model.json` (either direction — use this to get an editable JSON of the current reference)
-- **Propose command** (the review loop): `cdec propose model.json [--against source|reference|none] [--focus Qname1,Qname2] [--no-browser]` — pushes the design to the web viewer diffed against the baseline. Reuses a running `cdec serve` (any open tab hot-refreshes on each push) or starts one. `--focus` pre-filters the canvas to the classes under discussion.
+- **Propose command** (the review loop): `cdec propose model.json [--against source|reference|none] [--focus Qname1,Qname2] [--no-browser]` — pushes the design to the web viewer diffed against the baseline. Reuses a running `cdec ui` (any open tab hot-refreshes on each push) or starts one. `--focus` pre-filters the canvas to the classes under discussion.
 - **Lock command**: `cdec reference set model.json` — promotes the agreed model to `.cdec/reference.xmi` so `cdec check` / `cdec check` constrain development against it.
 - **Reference gate**: `cdec check` — exit 1 on any structural deviation of the code from the locked reference (CI-friendly); `cdec reference show` opens the viewer on a code-vs-reference diff.
-- **Viewer**: `cdec serve`, then pick the diagram — there is no static image export.
-- **Serve command**: `cdec serve` → interactive canvas at http://127.0.0.1:8765 (`cdec serve parse <source_dir>` parses and deep-links in one shot; language auto-detected from the file mix when `--lang` is omitted — any `.svelte` file wins, otherwise the most common of `.py`/`.cs`/`.ts`. `cdec init` / the `tag-conformance` rule need an explicit `--lang`.)
+- **Viewer**: `cdec ui`, then pick the diagram — there is no static image export.
+- **Serve command**: `cdec ui` → interactive canvas at http://127.0.0.1:8765 (`cdec ui parse <source_dir>` parses and deep-links in one shot; language auto-detected from the file mix when `--lang` is omitted — any `.svelte` file wins, otherwise the most common of `.py`/`.cs`/`.ts`. `cdec init` / the `tag-conformance` rule need an explicit `--lang`.)
 - **The gate**: `cdec check --config <project>/.cdec --source <source_dir>` — runs
   every rule in `rules.yaml`: model rules, `tag-conformance`, `implementation-locks`
   and `reference-architecture` alike. There is no second command.
@@ -104,8 +104,8 @@ The four languages share one parser→XMI→diagram pipeline, but **rule tags an
 
 | Capability | Python | C# | TypeScript | Svelte |
 |---|:---:|:---:|:---:|:---:|
-| `cdec parse` / `render` / `diff` / `propose` / `serve parse` | ✅ | ✅ | ✅ | ✅ |
-| Language auto-detect (`cdec serve parse` / `propose`, no `--lang`) | ✅ | ✅ | ✅ | ✅ (`.svelte` wins) |
+| `cdec parse` / `render` / `diff` / `propose` / `ui parse` | ✅ | ✅ | ✅ | ✅ |
+| Language auto-detect (`cdec ui parse` / `propose`, no `--lang`) | ✅ | ✅ | ✅ | ✅ (`.svelte` wins) |
 | Rule-tag shim (`@layer`, `@sealed`, …) | ✅ `cdec_rules` | ✅ `CodeConstraints.Rules` | ❌ none | ❌ none |
 | Model rules — structural (`no-new-classes`, `forbidden-references`, `no-cyclic-package-dependencies`, `dangling-classes`, `subclass-naming`, `max-class-fanout`) | ✅ | ✅ | ✅ | ✅ |
 | Model rules — tag-based (`frozen-rules`, `layer-dependencies`) | ✅ | ✅ | ⚠️ no-op (no tags to read) | ⚠️ no-op (no tags to read) |

@@ -26,6 +26,8 @@ export interface DiagramState {
   nodePositions: Map<string, { x: number; y: number }>;
   /** Bump to request the canvas re-run its auto-layout over visible nodes. */
   relayoutToken: number;
+  /** Bump to request the canvas fit the viewport on `selectedClassId`. */
+  fitToken: number;
   /** Model-orientation edges of the active diagram (source→target as stored in
    *  `graph.edges`, NOT the render-swapped inheritance edges). Published by the
    *  active *DiagramFlow so the top toolbar can drive graph navigation. */
@@ -85,6 +87,7 @@ export const diagramState: DiagramState = $state({
   visibleClassIds: null as Set<string> | null,
   nodePositions: new Map<string, { x: number; y: number }>(),
   relayoutToken: 0,
+  fitToken: 0,
   currentEdges: [] as GraphEdge[],
   revealStack: [] as RevealRing[],
   revealVia: "all" as RevealVia,
@@ -106,11 +109,30 @@ export function setPendingFocus(qnames: string[] | null): void {
     qnames && qnames.length > 0 ? qnames : null;
 }
 
-export function setSelected(id: string | null): void {
+/** Select one node. `fit` also centres the canvas on it: the default, for a
+ *  selection made away from the canvas (a list, the inspector, a walkthrough).
+ *  A click on the canvas passes `false`, the node is on screen already. */
+export function setSelected(id: string | null, fit = true): void {
   diagramState.selectedClassId = id;
   // Selecting (or deselecting) a node clears any edge selection.
   diagramState.selectedEdgeId = null;
   diagramState.highlightedNodeIds = new Set();
+  if (id && fit) diagramState.fitToken += 1;
+}
+
+/** Select several nodes at once (the `a` key). They render highlighted. */
+export function selectMany(ids: Iterable<string>): void {
+  diagramState.selectedEdgeId = null;
+  diagramState.highlightedNodeIds = new Set(ids);
+}
+
+/** Hide `ids` and clear the selection (the `h` key). `allIds` is every node id
+ *  of the diagram, for the case that no visibility filter is set. */
+export function hideMany(ids: Iterable<string>, allIds: Iterable<string>): void {
+  const next = new Set(diagramState.visibleClassIds ?? allIds);
+  for (const id of ids) next.delete(id);
+  diagramState.visibleClassIds = next;
+  setSelected(null);
 }
 
 /** Highlight an edge and its two endpoint nodes; clears node selection. */
@@ -201,15 +223,21 @@ export function focusOn(rootId: string): void {
   diagramState.revealStack = [];
 }
 
-/** Grow the visible set by one directed ring around every currently-visible
- *  node (see `revealRing` for what each direction follows). Newly-added ids
- *  are pushed onto `revealStack` so Collapse can remove them, and the canvas
- *  re-runs its layout. No-op while everything is shown
- *  (`visibleClassIds === null`). */
+/** The selected node plus the nodes `a` (or a selected edge) highlighted. */
+export function selectedIds(): string[] {
+  const ids = new Set(diagramState.highlightedNodeIds);
+  if (diagramState.selectedClassId) ids.add(diagramState.selectedClassId);
+  return [...ids];
+}
+
+/** Grow the visible set by one directed ring around the selection (see
+ *  `revealRing` for what each direction follows). Newly-added ids are pushed
+ *  onto `revealStack` so Collapse can remove them, and the canvas re-runs its
+ *  layout. No-op while everything is shown (`visibleClassIds === null`). */
 export function reveal(direction: RevealDirection, edges: GraphEdge[]): void {
   const cur = diagramState.visibleClassIds;
   if (cur === null) return;
-  const added = revealRing(cur, edges, direction, diagramState.revealVia);
+  const added = revealRing(cur, selectedIds(), edges, direction, diagramState.revealVia);
   if (added.length === 0) return;
   diagramState.revealStack = [...diagramState.revealStack, { direction, ids: added }];
   diagramState.visibleClassIds = new Set([...cur, ...added]);

@@ -81,7 +81,7 @@ Cross-package dependencies you should see in the **package diagram**:
 Start the server:
 
 ```bash
-.venv/Scripts/python.exe -m code_constraints.cli serve
+.venv/Scripts/python.exe -m code_constraints.cli ui
 # → http://127.0.0.1:8765
 ```
 
@@ -100,7 +100,7 @@ Or do the same from the CLI:
 .venv/Scripts/python.exe -m code_constraints.cli parse examples/python_demo --lang python --out demo.xmi
 
 # open the viewer to see it
-.venv/Scripts/python.exe -m code_constraints.cli serve
+.venv/Scripts/python.exe -m code_constraints.cli ui
 ```
 
 ## Architectural rule tags & constraints

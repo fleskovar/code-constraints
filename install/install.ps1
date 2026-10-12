@@ -204,6 +204,6 @@ Info "code-constraints is installed at $repoDir"
 Write-Host ""
 Write-Host "Open a NEW terminal (so PATH refreshes), then try:" -ForegroundColor White
 Write-Host "    uml --help"
-Write-Host "    cdec serve        # web viewer at http://127.0.0.1:8765"
+Write-Host "    cdec ui        # web viewer at http://127.0.0.1:8765"
 Write-Host ""
 Write-Host "To update later, just run this installer again." -ForegroundColor White

@@ -22,4 +22,4 @@ if (-not (Test-Path "frontend\dist\index.html")) {
 }
 
 Write-Host "Serving on http://${ServerHost}:${Port}"
-& $py -m code_constraints.cli serve --host $ServerHost --port $Port
+& $py -m code_constraints.cli ui --host $ServerHost --port $Port

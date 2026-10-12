@@ -318,7 +318,7 @@
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
         proOptions={{ hideAttribution: true }}
-        onnodeclick={({ node }) => setSelected(node.id)}
+        onnodeclick={({ node }) => setSelected(node.id, false)}
         onedgeclick={({ edge }) => onEdgeClick(edge)}
         onpaneclick={() => {
           setSelected(null);
@@ -331,7 +331,7 @@
         <Controls />
         <MiniMap pannable zoomable />
       </SvelteFlow>
-      <FitOnSelect />
+      <FitOnSelect allIds={allNodes.map((n) => n.id)} />
     </SvelteFlowProvider>
     <DiagramLegend />
   </div>

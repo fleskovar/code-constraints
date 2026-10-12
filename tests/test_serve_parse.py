@@ -1,4 +1,4 @@
-"""Tests for `cdec serve parse` — language auto-detection and the CLI wiring."""
+"""Tests for `cdec ui` / `cdec ui parse` — language auto-detection and the CLI wiring."""
 
 from __future__ import annotations
 
@@ -62,27 +62,62 @@ def test_empty_dir_returns_none(tmp_path: Path):
 
 # ---------- CLI wiring ----------
 
-def test_serve_help_lists_parse():
-    result = runner.invoke(app, ["serve", "--help"])
+def _capture_run(monkeypatch) -> dict:
+    calls: dict = {}
+
+    def fake_run(host, port, open_url=None):
+        calls.update(host=host, port=port, open_url=open_url)
+
+    monkeypatch.setattr("code_constraints.cli.__main__._run_server", fake_run)
+    return calls
+
+
+def test_ui_help_lists_parse():
+    result = runner.invoke(app, ["ui", "--help"])
     assert result.exit_code == 0
     assert "parse" in result.output
 
 
-def test_bare_serve_runs_server(monkeypatch):
-    calls: dict = {}
-
-    def fake_run(host, port, open_url=None):
-        calls["host"] = host
-        calls["port"] = port
-        calls["open_url"] = open_url
-
-    monkeypatch.setattr("code_constraints.cli.__main__._run_server", fake_run)
-    result = runner.invoke(app, ["serve", "--port", "9001"])
+def test_bare_ui_runs_server_and_opens_the_browser(monkeypatch):
+    calls = _capture_run(monkeypatch)
+    result = runner.invoke(app, ["ui", "--port", "9001"])
     assert result.exit_code == 0
-    assert calls == {"host": "127.0.0.1", "port": 9001, "open_url": None}
+    assert calls == {
+        "host": "127.0.0.1",
+        "port": 9001,
+        "open_url": "http://127.0.0.1:9001/",
+    }
 
 
-def test_serve_parse_autodetects_and_opens_url(monkeypatch):
+def test_ui_no_browser_starts_the_server_only(monkeypatch):
+    # The MCP server and a background shell start the viewer this way.
+    calls = _capture_run(monkeypatch)
+    result = runner.invoke(app, ["ui", "--no-browser"])
+    assert result.exit_code == 0
+    assert calls == {"host": "127.0.0.1", "port": 8765, "open_url": None}
+
+
+def test_ui_opens_loopback_for_a_wildcard_bind(monkeypatch):
+    # 0.0.0.0 is a listen address. A browser cannot open it.
+    calls = _capture_run(monkeypatch)
+    result = runner.invoke(app, ["ui", "--host", "0.0.0.0"])
+    assert result.exit_code == 0
+    assert calls["host"] == "0.0.0.0"
+    assert calls["open_url"] == "http://127.0.0.1:8765/"
+
+
+def test_serve_is_a_hidden_alias_of_ui(monkeypatch):
+    # `cdec serve` was the first name. Existing scripts must keep working.
+    calls = _capture_run(monkeypatch)
+    result = runner.invoke(app, ["serve", "--port", "9002", "--no-browser"])
+    assert result.exit_code == 0
+    assert calls == {"host": "127.0.0.1", "port": 9002, "open_url": None}
+    commands = runner.invoke(app, ["--help"]).output
+    assert " ui " in commands
+    assert " serve " not in commands
+
+
+def test_ui_parse_autodetects_and_opens_url(monkeypatch):
     calls: dict = {}
 
     def fake_run(host, port, open_url=None):
@@ -91,31 +126,31 @@ def test_serve_parse_autodetects_and_opens_url(monkeypatch):
         calls["open_url"] = open_url
 
     monkeypatch.setattr("code_constraints.cli.__main__._run_server", fake_run)
-    result = runner.invoke(app, ["serve", "parse", str(FIXTURES / "python_demo")])
+    result = runner.invoke(app, ["ui", "parse", str(FIXTURES / "python_demo")])
     assert result.exit_code == 0
     assert calls["open_url"] is not None
     assert "lang=python" in calls["open_url"]
     assert "path=" in calls["open_url"]
 
 
-def test_serve_parse_respects_explicit_lang(monkeypatch):
+def test_ui_parse_respects_explicit_lang(monkeypatch):
     calls: dict = {}
     monkeypatch.setattr(
         "code_constraints.cli.__main__._run_server",
         lambda host, port, open_url=None: calls.update(open_url=open_url),
     )
     result = runner.invoke(
-        app, ["serve", "parse", str(FIXTURES / "python_demo"), "--lang", "csharp"]
+        app, ["ui", "parse", str(FIXTURES / "python_demo"), "--lang", "csharp"]
     )
     assert result.exit_code == 0
     assert "lang=csharp" in calls["open_url"]
 
 
-def test_serve_parse_errors_when_undetectable(tmp_path, monkeypatch):
+def test_ui_parse_errors_when_undetectable(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "code_constraints.cli.__main__._run_server",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")),
     )
-    result = runner.invoke(app, ["serve", "parse", str(tmp_path)])
+    result = runner.invoke(app, ["ui", "parse", str(tmp_path)])
     assert result.exit_code != 0
     assert "auto-detect" in result.output

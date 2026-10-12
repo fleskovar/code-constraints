@@ -669,24 +669,28 @@ because that is what makes the delta reviewable.
 
 ### 2.6 Web viewer
 
-#### `cdec serve`
+#### `cdec ui`
 
-Start the FastAPI + Svelte viewer (default `http://127.0.0.1:8765`).
+Start the FastAPI + Svelte viewer (default `http://127.0.0.1:8765`) and open it in the
+default browser. Pass `--no-browser` to start the viewer only, for example in a
+background process or on a machine with no display.
 
 ```
-cdec serve [--host 127.0.0.1] [--port 8765]
+cdec ui [--host 127.0.0.1] [--port 8765] [--no-browser]
 ```
+
+`cdec serve` is the old name of this command. It still works as a hidden alias.
 
 > Port 8000 is reserved by Windows `http.sys` on some machines; 8765 is the default for
 > that reason. Change with `--port`.
 
-#### `cdec serve parse`
+#### `cdec ui parse`
 
 Shortcut: parse a tree and open the browser directly to its class diagram. Language is
 auto-detected when `--lang` is omitted.
 
 ```
-cdec serve parse [PATH] [--lang L] [--host 127.0.0.1] [--port 8765]
+cdec ui parse [PATH] [--lang L] [--host 127.0.0.1] [--port 8765]
 ```
 
 #### `cdec propose`
@@ -711,7 +715,7 @@ cdec propose MODEL [--source DIR] [--lang L] [--config .cdec] \
 
 **Re-running `propose` refreshes an already-open viewer tab in place** — no new tabs, no
 manual reload — which is what makes it usable as a conversation loop: edit the model,
-re-propose, discuss, repeat. If a `cdec serve` instance is already listening on the port it
+re-propose, discuss, repeat. If a `cdec ui` instance is already listening on the port it
 is reused; otherwise a server is started (blocking) with the proposal pre-loaded.
 
 Once the design is agreed, freeze it with `cdec reference set MODEL`.

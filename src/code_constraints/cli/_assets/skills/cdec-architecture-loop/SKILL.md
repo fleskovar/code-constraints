@@ -13,7 +13,7 @@ medium — the diagram diff *is* the review medium; chat is for reasoning and de
 ## The loop
 
 ```bash
-# 0. Nothing to start manually — `cdec propose` reuses a running `cdec serve`
+# 0. Nothing to start manually — `cdec propose` reuses a running `cdec ui`
 #    (port 8765) or boots one itself.
 
 # 1. Get an editable model (pick ONE starting point):

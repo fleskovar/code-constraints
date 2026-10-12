@@ -1072,14 +1072,14 @@ def build_server(project_root: Path | None = None) -> MCPServer:
             if not start_viewer:
                 raise ToolError(
                     f"no code-constraints viewer is running on {base_url}. Start one with "
-                    "`cdec serve`, or call this tool again with start_viewer=True."
+                    "`cdec ui`, or call this tool again with start_viewer=True."
                 )
             _spawn_viewer(host, port, roots.project_root)
             started = _wait_for_server(base_url, timeout=30.0)
             if not started:
                 raise ToolError(
                     f"started a viewer but {base_url} did not come up within 30s. "
-                    "Run `cdec serve` manually and retry."
+                    "Run `cdec ui` manually and retry."
                 )
 
         if against == "reference" and not ref_path.is_file():
@@ -1167,7 +1167,7 @@ def _wait_for_server(base_url: str, timeout: float) -> bool:
 
 
 def _spawn_viewer(host: str, port: int, cwd: Path) -> None:
-    """Start `cdec serve` detached.
+    """Start `cdec ui` detached.
 
     Detached matters twice over: the MCP server owns stdout as the protocol
     channel, so the child must never inherit it, and the viewer has to outlive
@@ -1183,7 +1183,11 @@ def _spawn_viewer(host: str, port: int, cwd: Path) -> None:
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(
-        [sys.executable, "-m", "code_constraints.cli", "serve", "--host", host, "--port", str(port)],
+        # --no-browser: the tool returns the URL, the agent decides who opens it.
+        [
+            sys.executable, "-m", "code_constraints.cli", "ui",
+            "--host", host, "--port", str(port), "--no-browser",
+        ],
         cwd=str(cwd),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

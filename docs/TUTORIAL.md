@@ -10,7 +10,7 @@ what you need today.
 | Part | You will learn | Needs config? |
 |---|---|---|
 | [0. Setup](#part-0--setup) | Getting `cdec` installed | — |
-| [1. See what you have](#part-1--see-what-you-have) | `parse`, `serve`, `render` | No |
+| [1. See what you have](#part-1--see-what-you-have) | `parse`, `ui`, `render` | No |
 | [2. See what changed](#part-2--see-what-changed) | `diff`, `diff-vs-xmi`, `diff-xmi` | No |
 | [3. Your first guardrail](#part-3--your-first-guardrail) | `init`, `.cdec/rules.yaml`, `check`, `exceptions` | Yes |
 | [4. The rule catalogue](#part-4--the-rule-catalogue) | Dependency, layer, and shape rules | Yes |
@@ -152,7 +152,7 @@ representation on disk.
 The fastest way to actually *look* at a codebase:
 
 ```bash
-cdec serve parse examples/python_demo
+cdec ui parse examples/python_demo
 ```
 
 This parses the tree and opens your browser straight to the class diagram at
@@ -170,14 +170,14 @@ This parses the tree and opens your browser straight to the class diagram at
 To start the server without parsing anything (then register projects from the homepage):
 
 ```bash
-cdec serve                       # http://127.0.0.1:8765
-cdec serve --port 9000           # if 8765 is taken
+cdec ui                       # http://127.0.0.1:8765
+cdec ui --port 9000           # if 8765 is taken
 ```
 
 ### Try it
 
 ```bash
-cdec serve parse examples/csharp_mvc_demo     # a small MVC codebase
+cdec ui parse examples/csharp_mvc_demo     # a small MVC codebase
 cdec parse examples/typescript_demo --lang typescript --out ts.json
 ```
 
@@ -197,7 +197,7 @@ methods, and dependencies* changed — and colour them: **green** added, **red**
 cdec diff main feature-branch --lang python --out change.xmi
 ```
 
-Open the result with `cdec serve` to review it on the canvas.
+Open the result with `cdec ui` to review it on the canvas.
 
 ```
 
@@ -1463,8 +1463,8 @@ A wheel built by `make dist` ships the built viewer inside the package, so an in
 wheel serves the UI; a wheel built without that step serves the API only.
 
 **My latest frontend change isn't showing**
-`cdec serve` serves the *built* bundle. Re-run `npm run build`, or use `npm run dev` for
-HMR. If it still persists, restart `cdec serve` so the new `index.html` is served.
+`cdec ui` serves the *built* bundle. Re-run `npm run build`, or use `npm run dev` for
+HMR. If it still persists, restart `cdec ui` so the new `index.html` is served.
 
 **`WinError 10013` on startup**
 Port 8000 is reserved by Windows `http.sys`. The default is already 8765; if that is also

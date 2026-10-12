@@ -164,7 +164,7 @@
         minZoom={0.2}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
-        onnodeclick={({ node }) => setSelected(node.id)}
+        onnodeclick={({ node }) => setSelected(node.id, false)}
         onpaneclick={() => setSelected(null)}
         onnodedragstop={onDragStop}
       >

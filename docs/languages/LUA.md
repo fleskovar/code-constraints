@@ -102,7 +102,7 @@ Named after the file stem, so a tag on a free function is never silently dropped
 
 ```bash
 cdec parse examples/lua_demo --lang lua --out lua.xmi
-cdec serve            # http://127.0.0.1:8765 — register the folder, pick "lua"
+cdec ui            # http://127.0.0.1:8765 — register the folder, pick "lua"
 ```
 
 Because Lua is untyped, **attribute and parameter types are empty** in the model and

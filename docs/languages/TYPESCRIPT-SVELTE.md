@@ -45,7 +45,7 @@ alias. Write `forbidden-references` patterns against the source text.
 ```bash
 cdec parse examples/typescript_demo --lang typescript --out ts.xmi
 cdec parse examples/svelte_demo     --lang svelte     --out svelte.xmi
-cdec serve
+cdec ui
 ```
 
 Detection handles the overlap for you: **any `.svelte` file present wins**, since Svelte
