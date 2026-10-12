@@ -23,7 +23,7 @@ only ever *add* a lock, never overwrite evidence that a locked body changed.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Sequence
 
 from code_constraints.core.model import SourceLocation
 from code_constraints.lint.rules import register
@@ -112,13 +112,18 @@ class ImplementationLocks(Rule):
             )
 
     # ---- baselining ----
-    def accept_current_state(self, ctx: RuleContext, *, force: bool = False) -> list[str]:
+    def accept_current_state(
+        self, ctx: RuleContext, *, force: bool = False, only: Sequence[str] = ()
+    ) -> list[str]:
         """Record digests for locked elements — `--automatic-exceptions locks`.
 
         Without `force` this only *adds* entries for newly tagged code, so it is
         safe for anyone to run and can never erase the evidence that a frozen
         implementation changed. `force` is the lead-gated path that accepts a
         drifted body and prunes released entries.
+
+        `only` (`--target`) keeps that privileged path narrow: a lead approving
+        one change re-baselines that element, not every lock that has drifted.
         """
         source, language, config_dir = self._resolve(ctx)
         from code_constraints.lock import UnsupportedLockLanguage, load_locks, update_locks, write_locks
@@ -127,7 +132,7 @@ class ImplementationLocks(Rule):
         entries = load_locks(config_dir)
         try:
             updated, result = update_locks(
-                source, language, entries, options, force=force
+                source, language, entries, options, only=only, force=force
             )
         except UnsupportedLockLanguage as exc:
             raise RuleSkipped(str(exc)) from exc
@@ -151,6 +156,9 @@ class ImplementationLocks(Rule):
             )
         if result.changed:
             lines.append(f"  wrote {len(updated)} lock(s) to {write_locks(config_dir, updated.values())}")
+        elif only and not lines and not result.unchanged:
+            # A mistyped target on the privileged path must not read as success.
+            lines.append(f"  no locked element matches --target {', '.join(only)}; nothing to write.")
         elif not lines:
             lines.append("  every lock is already recorded; nothing to write.")
         return lines

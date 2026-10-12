@@ -1,0 +1,23 @@
+name: code-constraints
+# This bundle ships inside the code-constraints package, so its version is the
+# package version. tests/test_hcm_bundle.py compares it with pyproject.toml.
+version: 0.1.0
+description: >-
+  Instructions for agents that work in a project gated by code-constraints
+  (cdec): plan the architecture first, propose it as a UML JSON model for
+  review, build guardrails from the rules catalogue, and keep `cdec check` green.
+author: Francisco Leskovar
+homepage: https://github.com/fleskovar/code-constraints
+tags:
+  - architecture
+  - constraints
+  - uml
+  - planning
+  - code-review
+
+# The bundle has no MCP server on purpose. `cdec-mcp` needs the optional extra
+# (pip install "code-constraints[mcp]"), and a bundle cannot make a resource
+# opt-in: an install with no flavor gets each resource. A server entry that
+# fails to start is worse than none. The skills give each instruction as a
+# `cdec` command, and they name the equivalent cdec_* tool where one exists.
+# docs/MCP.md tells how to add the server.

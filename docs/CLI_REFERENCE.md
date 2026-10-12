@@ -187,7 +187,8 @@ cdec init [--config .cdec] [--lang python] [--source .] [--force]
 #### `cdec update-assets`
 
 Refresh the bundled assets (Claude agents, language shims) in an existing project after
-upgrading code-constraints.
+upgrading code-constraints. The agents here are the older Claude-only set; the current
+agent configuration is the [hcm bundle](#cdec-hcm).
 
 ```
 cdec update-assets [--project-root .] [--no-agents] [--no-shims] [--lang L]
@@ -200,6 +201,31 @@ cdec update-assets [--project-root .] [--no-agents] [--no-shims] [--lang L]
 
 Update the code-constraints installation itself in place (pull latest, re-sync deps, rebuild
 the web UI). `--branch` targets a specific branch; `--no-frontend` skips the UI rebuild.
+
+#### `cdec hcm`
+
+code-constraints ships an [hcm](https://github.com/fleskovar/harness_config_manager) bundle
+with the agent configuration: four skills, the `cdec-architect` subagent, the `/cdec-plan`
+command and a context section. These two commands give the bundle to hcm. hcm then
+installs it into a harness with `hcm install code-constraints -t <harness>`.
+
+```
+cdec hcm init [--dev]
+cdec hcm update [HCM UPDATE OPTIONS...]
+```
+
+| Command | What it does |
+|---------|--------------|
+| `cdec hcm init` | Registers the bundle of this installation in the hcm registry. You can run it again at any time. The registry entry keeps its id. |
+| `cdec hcm init --dev` | Registers the working copy in place, for the development of the bundle. hcm then reads each edit on the next `hcm update`. |
+| `cdec hcm update` | Registers the bundle again, then runs `hcm update code-constraints` in the current folder. Run it after an upgrade of code-constraints. It sends its options to `hcm update`, for example `-t claude-code`, `-s user`, `--no-prompt` and `--dry-run`. |
+
+`cdec hcm update` does not change a `--dev` registration. Both commands need the `hcm`
+command on `PATH`. If it is not there, they print the install command and exit with code 1.
+If an hcm command fails, they exit with the exit code of hcm.
+
+The bundle does not copy the language shim. Use `cdec update-assets --lang L --no-agents`
+for that.
 
 ### 2.2 Parsing, rendering & diffing
 
@@ -269,7 +295,7 @@ cdec check [--config .cdec] [--source DIR] [--lang L] [--rules-file NAME] \
            [--reference MODEL] [--base-ref REF] \
            [--repo .] [--fail-on error|warning|none] [--format human|json] \
            [--json-out FILE] [--log-out FILE] \
-           [--automatic-exceptions WHAT] [--force] \
+           [--automatic-exceptions WHAT] [--force] [--target GLOB] \
            [--bypass-locks] [--bypass-reason TEXT]
 ```
 
@@ -288,6 +314,7 @@ cdec check [--config .cdec] [--source DIR] [--lang L] [--rules-file NAME] \
 | `--log-out` | from `rules.yaml` | Tee the human report to a file. That file is directly patchable — see [§2.4](#24-accepting-known-violations-cdec-exceptions). |
 | `--automatic-exceptions` | — | Accept the current state instead of failing on it. See below. Repeatable, or comma-separated. Short form `-A`. |
 | `--force` | off | With `--automatic-exceptions locks`, also re-baseline **changed** implementations and prune released entries. The privileged operation. |
+| `--target` | every lock | With `--automatic-exceptions locks`, limit the operation to the locked elements that match these qualified-name globs. Repeatable, or comma-separated. Use it with `--force`, so that one approval accepts one change. |
 | `--bypass-locks` | off | Report lock violations but do not fail on them. Prints an audit banner and sets `summary.bypassed`. |
 | `--bypass-reason` | `""` | Why locks are being bypassed. Recorded in the output and the JSON report. |
 
@@ -350,7 +377,8 @@ exceptions for issues the re-snapshot was about to erase.
 
 **Lock violations are never grandfathered.** `--automatic-exceptions rules` reports them
 and refuses; accepting a change to frozen code is `--automatic-exceptions locks --force`,
-which leaves a reviewable ledger diff. See the privilege boundary below.
+which leaves a reviewable ledger diff. Add `--target GLOB` to accept one element and not
+every lock that drifted. See the privilege boundary below.
 
 **Common flows**
 
@@ -417,7 +445,9 @@ whose tag was deleted — requires `--force`, which shows up as a reviewable dif
 
 ```bash
 cdec check --automatic-exceptions locks           # safe: only adds new locks
-cdec check --automatic-exceptions locks --force   # privileged: accepts a change
+cdec check --automatic-exceptions locks --force   # privileged: accepts every change
+cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force
+                                                  # privileged: accepts that one change
 ```
 
 Gate `.cdec/rules.yaml` with a CODEOWNERS entry to keep re-baselining a lead-only action.
@@ -461,6 +491,7 @@ The old commands still exist as hidden stubs that print where the behaviour went
 | `cdec lock check` | the `implementation-locks` rule, run by `cdec check` |
 | `cdec lock set` | `cdec check --automatic-exceptions locks` |
 | `cdec lock set --force` | `cdec check --automatic-exceptions locks --force` |
+| `cdec lock set --target X --force` | `cdec check --automatic-exceptions locks --target X --force` |
 | `cdec lock list` | `cdec locks` |
 | `cdec lock remove` | delete the `@locked` tag, then `--automatic-exceptions locks --force` |
 | `cdec reference test` | the `reference-architecture` rule, run by `cdec check` |
@@ -569,6 +600,9 @@ almost always means the report being quoted is stale. `--ignore-unknown` downgra
 ```
 cdec check --automatic-exceptions locks --force
 ```
+
+That form accepts every lock that drifted. To accept only the change that was approved,
+name the element: `cdec check --automatic-exceptions locks --target <element> --force`.
 
 `--automatic-exceptions rules` refuses them too, and says which ones it would not
 grandfather. That is by design. Accepting a changed frozen implementation is meant to
@@ -780,7 +814,7 @@ rules:
 | `severity` | `error` (fails at default `--fail-on`), `warning`, or `off` (rule not loaded at all). |
 | `scope` | `diff` rules need a baseline and inspect what changed; `snapshot` rules evaluate the current model. Each type has a sensible default. |
 | `message` | Optional explanation printed when the rule fires. Supports `{placeholders}` (see the generated `rules.yaml` comments for the set available per type) and multi-line YAML block scalars. Write these for your teammates — say why the rule exists and how to satisfy it. |
-| `ignore` | List of qualified-name globs exempted from the rule (`**` matches across dots). |
+| `ignore` | List of qualified-name globs exempted from the rule. `*` matches across dots, and `pkg.**` covers `pkg` itself and everything under it. The same glob syntax applies to `from`, `to`, `classes` and `targets`. |
 | *other keys* | Rule-specific options, e.g. `classes`, `from`/`to`, `base`/`name_pattern`, `allow`, `limit`, `targets`. |
 
 `rules: []` (the default scaffold) means no rules run — `cdec check` passes trivially until
@@ -819,8 +853,8 @@ the run; new violations of the same rule on other elements still fail.
 a violation explains itself to the next reviewer.
 
 `implementation-locks` has no entries here on purpose: a frozen implementation is
-re-baselined through `cdec check --automatic-exceptions locks --force`, which is separately
-reviewable. `cdec exceptions allow` refuses an `L-` key, and a hand-written entry for one
+re-baselined through `cdec check --automatic-exceptions locks --force` (with `--target` to
+name one element), which is separately reviewable. `cdec exceptions allow` refuses an `L-` key, and a hand-written entry for one
 is ignored rather than honoured.
 
 ### 3.4 `locks:`
@@ -884,8 +918,10 @@ are enforced. A tag is only recognised when imported from the shim namespace, so
 unrelated decorators never false-match.
 
 `cdec init` scaffolds `.cdec/` only — run **`cdec update-assets`** to drop the shim (and the
-bundled Claude agents/skill) into your project root. The interactive session (`cdec` with no
-subcommand) does both with prompts.
+bundled Claude agents/skill) into your project root. It reads the language from
+`.cdec/rules.yaml`, so after `cdec init` it needs no `--lang`. The interactive session
+(`cdec` with no subcommand) does both with prompts. For the agent configuration, prefer the
+[hcm bundle](#cdec-hcm) and pass `--no-agents` here.
 
 | Tag (`id`) | Python / C# | Applies to | Enforced by | Meaning |
 |------------|-------------|-----------|-------------|---------|
@@ -976,7 +1012,8 @@ reference: .cdec/reference.xmi
 #   severity  error | warning | off          (off disables the entry entirely)
 #   scope     diff | snapshot                (each type has a sensible default)
 #   message   optional explanation, supports {placeholders} + multi-line `|`
-#   ignore    list of qualified-name globs to exempt (** matches across dots)
+#   ignore    list of qualified-name globs to exempt (* matches across dots;
+#             pkg.** covers pkg itself and everything under it)
 
 rules:
 
@@ -1270,7 +1307,8 @@ Two habits keep this from turning into a rubber stamp:
   exists silently pre-approves the next one just like it.
 
 A lock violation (`L-`) is deliberately outside this loop — it needs
-`cdec check --automatic-exceptions locks --force`, which produces its own reviewable diff.
+`cdec check --automatic-exceptions locks --target <element> --force`, which produces its own
+reviewable diff.
 
 ### 7.3 Generated helper scripts
 
@@ -1377,8 +1415,8 @@ if json.load(open('report.json'))['summary'].get('bypassed'):
      in the same pull request, and the reviewer sees the model delta as part of code
      review.
    - **Intended, and inside frozen code** → a lead runs
-     `cdec check --automatic-exceptions locks --force`, which rewrites the `locks:` section
-     behind CODEOWNERS.
+     `cdec check --automatic-exceptions locks --target <element> --force`, which rewrites
+     that entry of the `locks:` section behind CODEOWNERS.
 
 This makes every change to the architecture an explicit, reviewable event rather than
 something that slips through unnoticed.

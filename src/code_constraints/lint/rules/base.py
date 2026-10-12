@@ -6,7 +6,7 @@ import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from code_constraints.core.keys import make_key
 from code_constraints.core.model import Class, DiffStatus, Project, SourceLocation
@@ -104,13 +104,18 @@ class RuleContext:
 def match_any_glob(name: str, patterns: Iterable[str]) -> bool:
     """Match `name` against any of the patterns. Patterns use shell glob
     semantics with `.` treated as a normal character (so `foo.bar.*` matches
-    `foo.bar.baz` and `foo.**` matches every descendant)."""
+    `foo.bar.baz`, and `foo.**` matches `foo` and every descendant)."""
     for p in patterns:
         # Treat `**` as matching across dot-separated segments. `fnmatch` already
         # treats `*` as any char including `.`, so `foo.**` collapses to
         # `foo.*` for matching purposes — which is what we want.
         pat = p.replace("**", "*")
         if fnmatch.fnmatchcase(name, pat):
+            return True
+        # `foo.**` names a subtree, and a subtree includes its root. Without
+        # this a package rule on `myapp.domain.**` skips the package
+        # `myapp.domain` itself — it runs, matches nothing, and looks like a pass.
+        if p.endswith(".**") and fnmatch.fnmatchcase(name, pat[:-2]):
             return True
     return False
 
@@ -174,7 +179,9 @@ class Rule:
     def check(self, ctx: RuleContext) -> Iterable[Violation]:
         raise NotImplementedError
 
-    def accept_current_state(self, ctx: RuleContext, *, force: bool = False) -> list[str]:
+    def accept_current_state(
+        self, ctx: RuleContext, *, force: bool = False, only: Sequence[str] = ()
+    ) -> list[str]:
         """Record the code as it stands now as this rule's approved baseline.
 
         Called by `cdec check --automatic-exceptions`. Rules whose issues are
@@ -182,6 +189,10 @@ class Rule:
         exists for the two rules that carry a baseline of their own: the lock
         ledger and the reference snapshot. Returns lines describing what
         changed, for the command to print.
+
+        `only` narrows the operation to elements matching these globs
+        (`--target`), for a baseline that is recorded per element. A rule whose
+        baseline is one indivisible snapshot ignores it.
         """
         return []
 

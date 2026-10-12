@@ -295,6 +295,36 @@ def test_forbidden_package_references_fires() -> None:
     assert ("ui", "->zoo") in qns
 
 
+def test_a_subtree_glob_covers_the_package_itself() -> None:
+    """`ui.**` names a subtree, and a subtree includes its root. Without that a
+    package rule on `ui.**` runs, matches nothing, and looks like a pass."""
+    from code_constraints.lint.rules.base import match_any_glob
+    from code_constraints.lock.model import match_any_glob as lock_match_any_glob
+
+    for match in (match_any_glob, lock_match_any_glob):
+        assert match("ui", ["ui.**"])
+        assert match("ui.widgets", ["ui.**"])
+        assert match("app.ui", ["*.ui.**"])
+        assert not match("uix", ["ui.**"])
+        # A single star stays a plain glob: only `.**` means "and the root".
+        assert not match("ui", ["ui.*"])
+
+    proj = _base_project()
+    proj.packages.append(Package(
+        name="ui", qualified_name="ui",
+        classes=[Class(
+            name="View", qualified_name="ui.View",
+            attributes=[Attribute(name="animal", type="zoo.Animal")],
+        )],
+    ))
+    rule = _make_rule(
+        "forbidden-package-references", scope="snapshot",
+        **{"from": ["ui.**"], "to": ["zoo.**"]},
+    )
+    report = run_checks(proj, [rule], has_diff=False)
+    assert {(v.qualified_name, v.signature) for v in report.violations} == {("ui", "->zoo")}
+
+
 # ---------------- subclass-naming ----------------
 
 def test_subclass_naming_fires_on_misnamed_subclass() -> None:

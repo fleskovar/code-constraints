@@ -255,8 +255,8 @@ cdec locks examples/lua_demo --lang lua --config examples/lua_demo/.cdec
 ```
 
 ```bash
-cdec check --automatic-exceptions locks   examples/lua_demo --lang lua --config examples/lua_demo/.cdec --reason "…"
-cdec check examples/lua_demo --lang lua --config examples/lua_demo/.cdec
+cdec check --automatic-exceptions locks --config examples/lua_demo/.cdec --source examples/lua_demo
+cdec check --config examples/lua_demo/.cdec --source examples/lua_demo
 ```
 
 **A Lua "class" is not one node.** The table-plus-metatable idiom spreads a class across
@@ -281,7 +281,8 @@ All the usual invariants hold — these leave the digest untouched:
 Re-baselining a genuine change stays privileged:
 
 ```bash
-cdec check --automatic-exceptions locks examples/lua_demo --lang lua --target orders.Receipt.formatted --force --reason "…"
+cdec check --automatic-exceptions locks --config examples/lua_demo/.cdec --source examples/lua_demo \
+  --target orders.Receipt.formatted --force
 ```
 
 ---

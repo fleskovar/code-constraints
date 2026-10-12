@@ -20,6 +20,7 @@ from pathlib import Path
 
 STATIC = "code_constraints/web/_static"
 SHIMS = "code_constraints/cli/_assets/shims"
+HCM_BUNDLE = "code_constraints/cli/_assets/hcm_bundle/hcm.yaml"
 
 problems: list[str] = []
 notes: list[str] = []
@@ -87,6 +88,12 @@ if wheel is not None:
         fail(f"{wheel.name}: expected 5 rule shims under {SHIMS}, found {len(shims)}: {shims}")
     else:
         ok("all 5 rule shims present")
+
+    # `cdec hcm init` registers this folder; without it the command is a dead end.
+    if HCM_BUNDLE not in names:
+        fail(f"{wheel.name}: no {HCM_BUNDLE} — the hcm bundle did not ship")
+    else:
+        ok("hcm bundle present")
 
     # These were removed with the Graphviz dependency; catch an accidental revival.
     for gone in ("code_constraints/core/dot.py", "code_constraints/core/render.py"):

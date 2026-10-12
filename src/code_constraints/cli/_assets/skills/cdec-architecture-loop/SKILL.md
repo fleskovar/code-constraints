@@ -71,8 +71,10 @@ accepted.
 
 - **Always pass a reason.** The waiver is committed and read by a human.
 - **`L-` keys are not waivable.** `cdec exceptions allow` refuses them and prints
-  `cdec check --automatic-exceptions locks --target … --force` — a frozen implementation changes only on the human's
-  explicit say-so, never on your initiative.
+  `cdec check --automatic-exceptions locks --force` — a frozen implementation changes only on the human's
+  explicit say-so, never on your initiative. For one approved change, the command is
+  `cdec check --automatic-exceptions locks --target <element> --force`; without `--target` it accepts
+  every lock that drifted.
 - Prefer a waiver over adding an `ignore:` glob or dropping a rule: one reviewable line
   about one element, versus turning the rule off for everything it would have caught.
 

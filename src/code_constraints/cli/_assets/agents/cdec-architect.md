@@ -88,8 +88,10 @@ Two rules you must respect:
 - **Always give `--reason`.** The waiver lands in a committed file a human will review; a
   reasonless entry is indistinguishable from a rubber stamp.
 - **`L-` keys (locks) are not waivable.** `cdec exceptions allow` refuses them and prints
-  `cdec check --automatic-exceptions locks --target … --force` instead. Never run that on your own initiative — a
-  frozen implementation changes only with the human's explicit approval.
+  `cdec check --automatic-exceptions locks --force` instead. Never run that on your own initiative — a
+  frozen implementation changes only with the human's explicit approval. When they do approve one
+  change, the command to hand them is the narrow one, `cdec check --automatic-exceptions locks --target <element> --force`:
+  without `--target`, `--force` accepts every lock that drifted.
 
 Suggest `cdec exceptions prune` when revisiting a project: a waiver for an issue that no
 longer occurs silently pre-approves the next one just like it.
@@ -168,6 +170,10 @@ Useful rule types you can configure in `rules.yaml`:
 - `dangling-classes` — flag classes with no connections
 - `subclass-naming` — naming convention enforcement
 - `max-class-fanout` — complexity budget per class
+
+Globs in `from` / `to` / `classes` / `ignore`: `*` matches across dots, and `pkg.**` covers the
+package `pkg` itself as well as everything under it — so `from: ["myapp.domain.**"]` is the whole
+domain layer, with no need to list `myapp.domain` separately.
 
 Full options, message `{placeholders}`, and worked pass/fail examples for every rule and
 tag: **`docs/RULES_CATALOGUE.md`**. Read it before proposing a `rules.yaml` so the options

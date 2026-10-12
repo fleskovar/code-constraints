@@ -160,7 +160,7 @@ rules:
 | `severity` | `error` fails the run at the default `--fail-on error`; `warning` reports without failing; `off` skips the entry entirely (it is never loaded). |
 | `scope` | `diff` rules compare against a baseline and are **skipped with a note** — never silently passed — when no baseline is resolvable. `snapshot` rules evaluate the current model alone. |
 | `message` | Free text printed when the rule fires, with `{placeholders}` substituted. Each rule's placeholders are listed in its entry below. A malformed placeholder falls back to the raw template rather than crashing. |
-| `ignore` | Qualified-name globs. `*` matches anything including dots, and `**` is normalised to `*`, so `orders.**` matches every descendant of `orders`. |
+| `ignore` | Qualified-name globs. `*` matches anything including dots. `orders.**` matches `orders` itself and every descendant of it, so one glob covers a package and its sub-packages. |
 
 > **YAML gotcha.** YAML 1.1 parses bare `off` as the boolean `false`. The loader coerces it
 > back, so `severity: off` works — but quoting it (`severity: "off"`) is clearer.
@@ -1462,7 +1462,7 @@ cdec lock: 1 lock violation(s):
       'orders.Receipt.formatted' is a frozen method and its implementation changed.
       Lock reason: receipt wording is contractual; finance signed off on it
       Locked by: Fran on 2026-08-02T21:00:38+00:00
-      Revert the change, or ask a lead to approve a re-baseline with `cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force`.
+      Revert the change, or ask a lead to approve a re-baseline with `cdec check --automatic-exceptions locks --force`.
 
 A locked implementation may only change with a lead's approval:
   cdec check --automatic-exceptions locks --force
@@ -1633,6 +1633,10 @@ cdec check --automatic-exceptions locks             # SAFE: only ADDS locks for 
 cdec check --automatic-exceptions locks --force
                           # PRIVILEGED: re-baselines a drifted digest, or prunes
                           # an entry whose tag was deleted.
+
+cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force
+                          # PRIVILEGED, and narrow: only the elements that match
+                          # the glob. One approval accepts one change.
 ```
 
 Only `--force` re-baselines, and it produces a **reviewable diff on the `locks:` section of `.cdec/rules.yaml`**. Put
@@ -1665,7 +1669,7 @@ skill of adopting the tool without the team turning it off.
 | `--base-ref REF` | `scope: diff` rules | Baseline is a live git ref, not `reference.xmi` | PR pipelines — compare against the target branch instead of a committed snapshot. |
 | `cdec exceptions allow KEY` | A, B, D | One named issue accepted, with a reason | A specific violation the team agreed is fine. Recorded in `exceptions:`, reviewable in the diff, revocable. |
 | `cdec check --automatic-exceptions reference` | A and D | Re-snapshot the agreed architecture | A reviewer approved a deliberate architectural change; commit the new `reference.xmi` in the same pull request. |
-| `cdec check --automatic-exceptions locks --force` | C | Re-baseline a frozen implementation | A lead approved a change to locked code. Leaves a reviewable ledger diff. |
+| `cdec check --automatic-exceptions locks --force` | C | Re-baseline a frozen implementation | A lead approved a change to locked code. Leaves a reviewable ledger diff. Add `--target GLOB` so that the approval covers the named elements only. |
 | `--bypass-locks` / `CDEC_LOCK_BYPASS` | C | Violations collected but not fatal; audit banner printed; `summary.bypassed` set in JSON | A genuine emergency. Have CI **reject bypassed runs** on protected branches. |
 | `--fail-on none` | whole run | Report only, never fail | Week 1 of adoption: collect data before turning anything on. |
 

@@ -501,7 +501,7 @@ Two things this deliberately will not do:
 - **A key that matches no current issue is an error**, not a silent no-op — it nearly
   always means the report you are quoting is out of date.
 - **Lock violations (`L-`) cannot be waived here.** `cdec exceptions allow` on one prints the
-  privileged command instead (`cdec check --automatic-exceptions locks --target … --force`). See
+  privileged command instead (`cdec check --automatic-exceptions locks --force`). See
   [§6.4](#64-the-privilege-boundary--the-part-that-matters) for why that boundary exists.
 
 Because keys are stable and every command speaks `--format json`, this loop scripts
@@ -530,8 +530,8 @@ best available template for your own.
 
 Every rule accepts the common fields `id` (unique, stable — it is the key in
 the `exceptions:` list), `type`, `severity` (`error` | `warning` | `off`), `scope`
-(`diff` | `snapshot`), `message`, and `ignore` (a list of qualified-name globs, where `**`
-matches across dots).
+(`diff` | `snapshot`), `message`, and `ignore` (a list of qualified-name globs, where `*`
+matches across dots and `pkg.**` covers `pkg` itself and everything under it).
 
 ### 4.1 Structural drift (default `scope: diff` — needs a baseline)
 
@@ -842,6 +842,10 @@ cdec check --automatic-exceptions locks
 
 # PRIVILEGED. Accepts a change to frozen code, and prunes released entries.
 cdec check --automatic-exceptions locks --force
+
+# PRIVILEGED, and narrow. Accepts the change to the named element only, so
+# one approval never accepts a second change that nobody looked at.
+cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force
 ```
 
 Only `--force` re-baselines a drifted digest — and it produces a **reviewable diff on the
@@ -1218,9 +1222,32 @@ All four live in `.cdec/rules.yaml` and all four run in `cdec check`, which matt
 an agent than for a person: one command to put in its build loop, one report to read, and
 no way to satisfy the gate by running only three quarters of it.
 
-### 10.2 Bundled Claude assets
+### 10.2 Bundled agent assets
 
-`cdec update-assets` (or the interactive `cdec` session) drops these into the project:
+The agent configuration ships as an
+[hcm](https://github.com/fleskovar/harness_config_manager) bundle, which installs into
+Claude Code, GitHub Copilot, OpenCode, Reasonix and Pi:
+
+```bash
+cdec hcm init                                  # register the bundle with hcm
+hcm install code-constraints -t claude-code    # install it into this project
+cdec hcm update                                # after an upgrade of code-constraints
+```
+
+| Asset | Purpose |
+|---|---|
+| `cdec-architecture-first` (skill) | The work-plan procedure: analyse the class hierarchy and its constraints, propose the change as a UML JSON model, wait for a senior developer's approval, then implement. |
+| `cdec-architecture-loop` (skill) | The propose → review → lock loop and the JSON model format. |
+| `cdec-guardrails` (skill) | Every rule type and tag, with a cookbook of patterns. |
+| `cdec-gate` (skill) | Running `cdec check` and resolving a failure without weakening a rule. |
+| `cdec-architect` (subagent) | Writes the proposal and its guardrails; never approves its own proposal. |
+| `/cdec-plan` (command) | Writes an architecture-first work plan and stops for review. |
+
+See [Agent skills (hcm bundle)](../README.md#agent-skills-hcm-bundle) for the details.
+
+`cdec update-assets` (or the interactive `cdec` session) still drops an older, Claude-only
+set into `.claude/`. If you use the bundle, pass `--no-agents`: two of these share names
+with bundle files.
 
 | Asset | Purpose |
 |---|---|
@@ -1253,7 +1280,7 @@ the decision where you will see it in review, rather than editing the rule away.
 
 The one thing it cannot do is accept a lock. `cdec exceptions allow` refuses an `L-` key, so
 changing frozen code always needs a human running
-`cdec check --automatic-exceptions locks --force`.
+`cdec check --automatic-exceptions locks --target <element> --force`.
 
 ### 10.4 Make the messages teach
 

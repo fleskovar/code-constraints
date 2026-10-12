@@ -373,6 +373,22 @@ def test_accept_locks_with_force_rebaselines_and_leaves_a_diff(project) -> None:
     ]
 
 
+def test_accept_locks_target_narrows_the_forced_rebaseline(project) -> None:
+    """`force` accepts a change to frozen code; `target` keeps that to the
+    element that was approved — the same boundary the CLI's --target draws."""
+    billing = project / "src_tree" / "billing.py"
+    before = _rules_doc(project)["locks"][0]["digest"]
+    billing.write_text(
+        billing.read_text(encoding="utf-8").replace("amount * 0.2", "amount * 0.5"),
+        encoding="utf-8",
+    )
+    _call(project, "cdec_accept", what=["locks"], force=True, target=["Ledger.**"])
+    assert _rules_doc(project)["locks"][0]["digest"] == before
+
+    _call(project, "cdec_accept", what=["locks"], force=True, target=["Invoice.settle"])
+    assert _rules_doc(project)["locks"][0]["digest"] != before
+
+
 def test_accept_rules_never_grandfathers_a_lock(project) -> None:
     billing = project / "src_tree" / "billing.py"
     billing.write_text(

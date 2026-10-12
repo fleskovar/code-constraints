@@ -255,8 +255,8 @@ cdec locks examples/julia_demo --lang julia --config examples/julia_demo/.cdec
 ```
 
 ```bash
-cdec check --automatic-exceptions locks   examples/julia_demo --lang julia --config examples/julia_demo/.cdec --reason "…"
-cdec check examples/julia_demo --lang julia --config examples/julia_demo/.cdec
+cdec check --automatic-exceptions locks --config examples/julia_demo/.cdec --source examples/julia_demo
+cdec check --config examples/julia_demo/.cdec --source examples/julia_demo
 ```
 
 Two Julia-specific behaviours:
@@ -279,8 +279,8 @@ digest untouched. Non-rule macros are folded back in separately, so:
 Re-baselining stays privileged:
 
 ```bash
-cdec check --automatic-exceptions locks examples/julia_demo --lang julia \
-  --target orders.Billing.Receipt.formatted --force --reason "approved"
+cdec check --automatic-exceptions locks --config examples/julia_demo/.cdec --source examples/julia_demo \
+  --target orders.Billing.Receipt.formatted --force
 ```
 
 ---

@@ -21,7 +21,7 @@ new model in the same pull request, so the architectural delta is reviewable.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from code_constraints.lint.rules import register
 from code_constraints.lint.rules.base import Rule, RuleContext, RuleSkipped, Violation
@@ -96,7 +96,9 @@ class ReferenceArchitecture(Rule):
                 key_rule=deviation.category,
             )
 
-    def accept_current_state(self, ctx: RuleContext, *, force: bool = False) -> list[str]:
+    def accept_current_state(
+        self, ctx: RuleContext, *, force: bool = False, only: Sequence[str] = ()
+    ) -> list[str]:
         """Re-snapshot the reference from the current source."""
         if ctx.source is None or not ctx.language:
             raise RuleSkipped("no source tree resolved")

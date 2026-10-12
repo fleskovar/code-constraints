@@ -73,8 +73,9 @@ Typical flows:
   Triage everything  -> cdec_issues, one keyed list across every rule.
   Accept a violation -> cdec_allow(keys=["V-1A2B3C4D"], reason="why").
                         Locks are NOT acceptable this way; approve one with
-                        cdec_accept(what=["locks"], force=True), which leaves a
-                        reviewable diff on the `locks:` section of rules.yaml.
+                        cdec_accept(what=["locks"], force=True, target=[...]),
+                        which leaves a reviewable diff on the `locks:` section
+                        of rules.yaml. `target` names the approved element.
   Adopt on old code  -> cdec_accept(what=["rules"]) grandfathers today's
                         violations so only NEW ones fail.
   Agree a design     -> write a model .json, cdec_propose it (the browser shows
@@ -543,6 +544,7 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         base_ref: Optional[str] = None,
         repo: Optional[str] = None,
         force: bool = False,
+        target: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         """Record the code as it stands now as approved, instead of failing on it.
 
@@ -557,6 +559,9 @@ def build_server(project_root: Path | None = None) -> MCPServer:
                       without `force` it can only ADD locks, never erase evidence
                       that a frozen body changed. With `force=True` it ACCEPTS a
                       change to frozen code — only ever with explicit approval.
+                      Pass `target` (qualified-name globs) with it, so only the
+                      element that was approved is re-baselined, not every lock
+                      that drifted.
           "reference" re-snapshot .cdec/reference.xmi from the current source,
                       which erases the drift the reference existed to detect.
 
@@ -573,6 +578,9 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         accept = set(what)
         if not accept:
             raise ToolError("`what` must name at least one of: rules, locks, reference")
+        only = list(target or [])
+        if only and "locks" not in accept:
+            raise ToolError("`target` applies to what=[\"locks\"]")
         cfg_dir, cfg, loaded = _project(roots, config_dir)
         source_path = roots.path(source) or cfg.source
         ref_path = roots.path(reference)
@@ -604,7 +612,11 @@ def build_server(project_root: Path | None = None) -> MCPServer:
             lines: list[str] = []
             for rule in rules:
                 try:
-                    lines.extend(rule.accept_current_state(auto_ctx, force=force))
+                    lines.extend(
+                        rule.accept_current_state(
+                            auto_ctx, force=force, only=only if name == "locks" else ()
+                        )
+                    )
                 except RuleSkipped as exc:
                     out["skipped"].append({"what": name, "reason": str(exc)})
             out["recorded"][name] = lines
@@ -644,8 +656,8 @@ def build_server(project_root: Path | None = None) -> MCPServer:
                 ]
                 out["hint"] = (
                     "Lock violations are never grandfathered as exceptions. Accept one "
-                    "with cdec_accept(what=['locks'], force=True), and only with the "
-                    "user's approval."
+                    "with cdec_accept(what=['locks'], force=True, target=[...]), naming "
+                    "the approved element, and only with the user's approval."
                 )
         out["rules_file"] = _rel(roots, cfg_dir / RULES_FILENAME)
         return out
@@ -797,7 +809,7 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         rather than a silent no-op.
 
         Lock issues (`L-…`) are refused by design: use
-        `cdec_accept(what=["locks"], force=True)`.
+        `cdec_accept(what=["locks"], force=True, target=[...])`.
         """
         from code_constraints.waivers import allow_keys, save_waivers
 

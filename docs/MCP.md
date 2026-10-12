@@ -10,6 +10,12 @@ and issue keys (`V-`/`F-`/`L-`/`R-`) are derived by the same code path the CLI
 uses — a key an agent reads from `cdec_check` is the same key
 `cdec exceptions allow` accepts on the command line.
 
+The server gives an agent the tools. The *workflow* — plan the architecture first, propose
+it for review, then implement — ships separately as an
+[hcm](https://github.com/fleskovar/harness_config_manager) bundle of skills. See
+[Agent skills (hcm bundle)](../README.md#agent-skills-hcm-bundle). The bundle does not
+configure this server; do that with the steps below.
+
 ## Install
 
 ```bash
@@ -134,7 +140,7 @@ stdout (stdout is the protocol stream).
 | Tool | What it does |
 | --- | --- |
 | `cdec_check` | Runs **every** rule in `.cdec/rules.yaml` and returns one verdict. Model rules, `tag-conformance`, `implementation-locks` and `reference-architecture` alike. There is no second gate to call. |
-| `cdec_accept` | Records the current state as approved instead of failing on it: `what=["rules"]` grandfathers today's violations, `["locks"]` records new lock digests, `["reference"]` re-snapshots the reference model. |
+| `cdec_accept` | Records the current state as approved instead of failing on it: `what=["rules"]` grandfathers today's violations, `["locks"]` records new lock digests, `["reference"]` re-snapshots the reference model. `target` narrows `["locks"]` to the named elements. |
 | `cdec_locks` | Read-only: what is lockable, what is tagged, what is baselined, what is stale. |
 
 Each violation carries a key whose prefix names the engine that produced it — `V-` a model
@@ -173,13 +179,14 @@ rejected. An agent should confirm with the user before calling them:
   - `what=["locks"]` records digests for newly tagged code. Safe on its own — without
     `force` it only *adds* and can never erase evidence that locked code changed.
     `force=True` accepts a change to a *frozen* implementation: only with explicit
-    approval.
+    approval. Pass `target=["orders.Receipt.formatted"]` with it, so that only the
+    approved element is re-baselined and not every lock that drifted.
   - `what=["reference"]` re-snapshots the current code, erasing the drift the reference
     existed to detect.
 - **`cdec_reference_set`** — replaces the target architecture.
 
 Lock violations are deliberately **not acceptable** through `cdec_allow`; the tool refuses
-them and points at `cdec_accept(what=["locks"], force=True)`, which leaves a reviewable diff
+them and points at `cdec_accept(what=["locks"], force=True, target=[…])`, which leaves a reviewable diff
 on the `locks:` section of `.cdec/rules.yaml` that CODEOWNERS can gate.
 `cdec_accept(what=["rules"])` refuses them too, and reports which ones it would not
 grandfather.

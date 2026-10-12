@@ -137,6 +137,43 @@ def test_check_fails_on_a_changed_body(project_dir):
     assert "cdec check --automatic-exceptions locks --force" in result.output
 
 
+def test_target_narrows_a_forced_rebaseline_to_the_approved_element(project_dir):
+    """A lead approves ONE change. `--force` alone would accept every lock that
+    drifted, which is a wider decision than the one that was made."""
+    _edit(
+        project_dir,
+        "    def describe(self):",
+        '    @locked(reason="wording")\n    def describe(self):',
+    )
+    _baseline(project_dir)
+    before = {e["target"]: e["digest"] for e in _locks(project_dir)}
+    assert set(before) == {"Invoice.settle", "Invoice.describe"}
+    _edit(project_dir, "amount * 0.2", "amount * 0.3")
+    _edit(project_dir, '"invoice"', '"an invoice"')
+
+    missed = _baseline(project_dir, "--target", "Invoice.setle", "--force")
+    assert "no locked element matches --target Invoice.setle" in missed.output
+    assert {e["target"]: e["digest"] for e in _locks(project_dir)} == before
+
+    result = _baseline(project_dir, "--target", "Invoice.settle", "--force")
+    assert result.exit_code == 0, result.output
+    assert "~ rebased  Invoice.settle" in result.output
+    after = {e["target"]: e["digest"] for e in _locks(project_dir)}
+    assert after["Invoice.settle"] != before["Invoice.settle"]
+    assert after["Invoice.describe"] == before["Invoice.describe"]
+
+    check = _run(["check"], cwd=project_dir)
+    assert check.exit_code == 1
+    assert "Invoice.describe" in check.output
+    assert "Invoice.settle" not in check.output
+
+
+def test_target_is_refused_outside_lock_baselining(project_dir):
+    result = _run(["check", "--target", "Invoice.settle"], cwd=project_dir)
+    assert result.exit_code == 2
+    assert "--automatic-exceptions locks" in result.output
+
+
 def test_check_json_report_carries_the_lock_violation(project_dir):
     _baseline(project_dir)
     _edit(project_dir, "amount * 0.2", "amount * 0.3")

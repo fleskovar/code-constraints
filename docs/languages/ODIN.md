@@ -277,9 +277,8 @@ cdec locks examples/odin_demo --lang odin --config examples/odin_demo/.cdec
 Tag a procedure or struct, then baseline it:
 
 ```bash
-cdec check --automatic-exceptions locks examples/odin_demo --lang odin --config examples/odin_demo/.cdec \
-  --reason "receipt wording is contractual"
-cdec check examples/odin_demo --lang odin --config examples/odin_demo/.cdec
+cdec check --automatic-exceptions locks --config examples/odin_demo/.cdec --source examples/odin_demo
+cdec check --config examples/odin_demo/.cdec --source examples/odin_demo
 ```
 
 **A lock is an AST identity, not a line range.** For Odin specifically, all of these leave
@@ -294,8 +293,8 @@ Any semantic change to the body — down to swapping the em-dash for a comma in 
 string — fails the check. Accepting one is a privileged, reviewable act:
 
 ```bash
-cdec check --automatic-exceptions locks examples/odin_demo --lang odin --target orders.Receipt.formatted --force \
-  --reason "finance approved the new wording"
+cdec check --automatic-exceptions locks --config examples/odin_demo/.cdec --source examples/odin_demo \
+  --target orders.Receipt.formatted --force
 ```
 
 Gate the `locks:` section of `.cdec/rules.yaml` with CODEOWNERS and that stays a lead-only operation. Locks are

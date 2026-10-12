@@ -192,6 +192,7 @@ comments (`---@cdec sealed`, `//@cdec sealed`). See
 - Read the [tutorial](docs/TUTORIAL.md) for the full path from the first parse to a
   gated CI pipeline.
 - Freeze a function body with `@locked`. See [Implementation locks](#implementation-locks).
+- Teach a coding agent the workflow. See [Agent skills (hcm bundle)](#agent-skills-hcm-bundle).
 - Let a coding agent run the checks. See [Use it from a coding agent](#use-it-from-a-coding-agent-mcp).
 
 ---
@@ -338,9 +339,11 @@ entry whose tag was deleted. To accept a change, add `--force`:
 
 ```bash
 cdec check --automatic-exceptions locks --force
+cdec check --automatic-exceptions locks --target Invoice.settle --force   # one element only
 ```
 
-Only this command rewrites the `locks:` section of `.cdec/rules.yaml`. Put the file behind
+Without `--target`, `--force` accepts each lock that changed. With it, one approval
+accepts one change. Only this command rewrites the `locks:` section of `.cdec/rules.yaml`. Put the file behind
 a CODEOWNERS entry, and a change to frozen code becomes a reviewed, lead-approved event.
 For the same reason, `cdec exceptions allow` refuses an `L-` key, and
 `--automatic-exceptions rules` does not accept one.
@@ -379,6 +382,82 @@ always gives the same key. An agent can run `cdec check --format json`, decide, 
 
 Other subcommands: `review`, `remove`, `list`, `prune`. See
 [Accepting known violations](docs/CLI_REFERENCE.md#24-accepting-known-violations-cdec-exceptions).
+
+## Agent skills (hcm bundle)
+
+`cdec` ships a bundle for [hcm](https://github.com/fleskovar/harness_config_manager), the
+harness config manager. The bundle tells a coding agent how to work in a project that
+`cdec` gates. hcm installs it into Claude Code, GitHub Copilot, OpenCode, Reasonix and Pi.
+
+With the bundle, the agent plans the architecture first. Each work plan starts with an
+analysis of the class hierarchy and of its constraints. The agent then proposes the
+changes as a UML JSON model and shows it with `cdec propose`. It writes the implementation
+only after a senior developer approves the proposal.
+
+| Resource | Name | What it gives the agent |
+| --- | --- | --- |
+| Context section | `code-constraints` | The rules that apply in each session: plan first, run the gate, do not weaken a constraint. |
+| Skill | `cdec-architecture-first` | The work-plan procedure: analyse, model, propose, wait for approval, lock, implement. It includes a plan template. |
+| Skill | `cdec-architecture-loop` | The propose → review → lock loop, and the JSON model format. |
+| Skill | `cdec-guardrails` | Each rule type and each tag from the [rules catalogue](docs/RULES_CATALOGUE.md), with a cookbook of patterns: layers, ports and adapters, factory, value object, frozen implementation. |
+| Skill | `cdec-gate` | How to run `cdec check`, read its report, and resolve a failure without a weaker rule. |
+| Subagent | `cdec-architect` | An architect that writes the proposal and its guardrails. It does not approve its own proposal. |
+| Command | `/cdec-plan` | Writes an architecture-first work plan for a change, and stops for the review. |
+
+### Install the bundle
+
+**1. Install hcm.** This needs Node.js:
+
+```bash
+npm install -g harness-config-manager
+```
+
+**2. Register the bundle.** `cdec` gives hcm the bundle that ships in the package:
+
+```bash
+cdec hcm init
+```
+
+**3. Install it into a project.** Run this in the root of the project:
+
+```bash
+hcm install code-constraints -t claude-code
+```
+
+For a different harness, change `-t`. `hcm targets` lists the harnesses, and `-t all`
+installs into each one. To install the bundle for all your projects, add `-s user`.
+
+The bundle does not copy the language shim. To get the shim, run
+`cdec update-assets --lang python --no-agents`. See
+[step 6 of the quick start](#6-add-rules-in-the-code-with-the-shims).
+
+### Update the bundle
+
+After you upgrade `code-constraints`, run this in each project that has the bundle:
+
+```bash
+cdec hcm update
+```
+
+The command registers the new bundle, then runs `hcm update code-constraints` in the
+current folder. It sends its options to `hcm update`, for example
+`cdec hcm update -t claude-code --no-prompt`.
+
+To remove the bundle, run `hcm uninstall code-constraints -t claude-code` in the project,
+then `hcm registry remove code-constraints`.
+
+### Develop the bundle
+
+The bundle is in `src/code_constraints/cli/_assets/hcm_bundle/`. From an editable install
+(`pip install -e .`), register the working copy:
+
+```bash
+cdec hcm init --dev
+```
+
+hcm then reads the folder in place. After each edit, run `hcm update code-constraints` in
+a test project. Check the bundle with `hcm validate` and `hcm refs check --path`. Keep the
+`version` in `hcm.yaml` equal to the package version.
 
 ## Use it from a coding agent (MCP)
 
@@ -490,7 +569,7 @@ Each command also runs as `python -m code_constraints.cli <command>`. The
 | `cdec` | Interactive session: setup, viewer, checks, CI scripts. |
 | `cdec init` | Scaffold `.cdec/rules.yaml` and a reference snapshot. `--migrate` converts the old per-concern files. |
 | `cdec check` | The gate: run every rule and exit non-zero on a violation. |
-| `cdec check -A rules\|locks\|reference\|all` | Accept the current state instead of a failure (`--automatic-exceptions`). |
+| `cdec check -A rules\|locks\|reference\|all` | Accept the current state instead of a failure (`--automatic-exceptions`). `--target GLOB` limits `-A locks` to the named elements. |
 | `cdec exceptions …` | Accept, list, remove and prune individual issues by key. |
 | `cdec locks` | Show what is lockable and what is locked (read-only). |
 | `cdec serve` / `cdec serve parse` | Start the web viewer / open the class diagram of a codebase. |
@@ -500,10 +579,14 @@ Each command also runs as `python -m code_constraints.cli <command>`. The
 | `cdec reference set` / `show` | Lock a model as the reference / show the code against it. |
 | `cdec diff` / `diff-vs-xmi` / `diff-xmi` | Diff two git revisions / source against a model / two models. |
 | `cdec update-assets` | Copy the language shim and the bundled Claude agents into a project. |
+| `cdec hcm init` / `cdec hcm update` | Register the agent bundle with hcm / refresh it after an upgrade. |
 | `cdec update` | Update a standalone install in place. |
 
-`cdec` also ships two Claude Code agents (`cdec-architect`, `oop-refactor-architect`) and a
-skill (`cdec-architecture-loop`). `cdec update-assets` copies them into `.claude/`.
+The agent configuration ships as an hcm bundle. See
+[Agent skills (hcm bundle)](#agent-skills-hcm-bundle). `cdec update-assets` can also copy
+an earlier set of Claude Code agents (`cdec-architect`, `oop-refactor-architect`) and a
+skill (`cdec-architecture-loop`) into `.claude/`. If you use the bundle, pass `--no-agents`,
+because two of those files have the same names as files of the bundle.
 
 ## Documentation
 

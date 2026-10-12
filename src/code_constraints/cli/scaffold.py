@@ -415,7 +415,8 @@ output:
 #               block scalars (`message: |`). USE IT: a rule that explains why
 #               it exists teaches; one that just says "violation" breeds
 #               resentment.
-#   ignore    — list of qualified-name globs to exempt
+#   ignore    — list of qualified-name globs to exempt. `*` matches across
+#               dots, and `pkg.**` covers `pkg` itself and everything under it
 #
 # The rules can live here, or in `.cdec/rules/*.yaml` (one `rules:` list per
 # file), but not in both — a project with laws in two places fails the run.
@@ -594,9 +595,12 @@ is the privileged step:
 
 ```
 cdec check --automatic-exceptions locks --force
+cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force
 ```
 
-It rewrites the `locks:` section, which is a reviewable diff. Put `rules.yaml`
+The first form accepts every lock that changed; `--target` narrows it to the
+elements you name, so one approval accepts one change. Either way it rewrites
+the `locks:` section, which is a reviewable diff. Put `rules.yaml`
 behind a CODEOWNERS entry and re-baselining becomes a lead-only action that
 always leaves a trail. To ship without re-baselining,
 `cdec check --bypass-locks --bypass-reason "..."` prints an audit banner and

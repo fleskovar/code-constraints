@@ -71,7 +71,7 @@ is the authority, that is a violation in its own right.
 | `orders.Receipt.formatted` | ✅ | ❌ | ✅ | **`unlocked`** |
 
 **Step 3 — the escape that is not one.** The fix is *not* to delete the ledger entry by
-hand; it is `cdec lock set --target orders.Receipt.formatted --force`, which prunes the entry and leaves
+hand; it is `cdec check --automatic-exceptions locks --target orders.Receipt.formatted --force`, which prunes the entry and leaves
 a reviewable diff. `update_locks` freely *adds* locks without `--force`, but will not
 prune or re-baseline without it — so `cdec check --automatic-exceptions locks` stays safe for anyone to run and can
 never erase evidence.

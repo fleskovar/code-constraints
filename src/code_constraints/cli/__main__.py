@@ -240,7 +240,7 @@ def update_assets(
     no_agents: bool = typer.Option(False, "--no-agents", help="Skip updating Claude agent files."),
     no_shims: bool = typer.Option(False, "--no-shims", help="Skip updating language shims."),
     lang: Optional[str] = typer.Option(
-        None, "--lang", help="Language for shims (auto-detected from .cdec/config.yaml if omitted)."
+        None, "--lang", help="Language for shims (read from .cdec/rules.yaml if omitted)."
     ),
 ) -> None:
     """Update code-constraints assets (Claude agents, shims) to the version bundled with
@@ -263,12 +263,12 @@ def update_assets(
     if not no_shims:
         resolved_lang = lang
         if resolved_lang is None:
-            config_file = project_root / ".cdec" / "config.yaml"
-            if config_file.is_file():
-                import yaml  # type: ignore[import-untyped]
-                with config_file.open(encoding="utf-8") as f:
-                    cfg = yaml.safe_load(f)
-                resolved_lang = (cfg or {}).get("language")
+            # The same loader `cdec check` uses: rules.yaml first, with the
+            # legacy config.yaml filling gaps.
+            try:
+                resolved_lang = load_project_config(project_root / ".cdec").language
+            except ConfigError:
+                resolved_lang = None
         if resolved_lang and has_shim(resolved_lang):
             try:
                 dests = copy_shims(project_root, resolved_lang, force=True)
@@ -365,6 +365,13 @@ def check(
              "that have CHANGED and drop released entries. This is the privileged "
              "operation: it accepts a change to frozen code.",
     ),
+    target: list[str] = typer.Option(
+        [], "--target", metavar="GLOB",
+        help="With `--automatic-exceptions locks`, limit the operation to the "
+             "locked elements matching these qualified-name globs, so `--force` "
+             "re-baselines the one change that was approved rather than every "
+             "lock that drifted. Repeatable or comma-separated.",
+    ),
     bypass_locks: bool = typer.Option(
         False, "--bypass-locks",
         help="Report lock violations but do not fail on them. Prints an audit banner "
@@ -391,6 +398,9 @@ def check(
     except ValueError as exc:
         raise typer.BadParameter(f"--fail-on must be error|warning|none, got {fail_on!r}") from exc
     accept = _parse_auto_accept(automatic_exceptions)
+    only = _split_csv(target)
+    if only and "locks" not in accept:
+        raise typer.BadParameter("--target applies to `--automatic-exceptions locks`")
 
     cfg = _load_config_cli(config_dir)
     source_path = source.resolve() if source else cfg.source
@@ -435,7 +445,9 @@ def check(
         )
 
     if accept:
-        _apply_automatic_exceptions(accept, loaded, ctx_info, config_dir, run, force=force)
+        _apply_automatic_exceptions(
+            accept, loaded, ctx_info, config_dir, run, force=force, only=only
+        )
         return
 
     report = run(filtered=True)
@@ -492,6 +504,7 @@ def _apply_automatic_exceptions(
     run: "Callable[..., Report]",
     *,
     force: bool,
+    only: list[str],
 ) -> None:
     """Record the current state as approved, instead of failing on it.
 
@@ -520,7 +533,13 @@ def _apply_automatic_exceptions(
         for rule in rules:
             typer.echo(f"[{rule.rule_id}] recording the current state:")
             try:
-                lines = rule.accept_current_state(_auto_accept_context(ctx_info), force=force)
+                lines = rule.accept_current_state(
+                    _auto_accept_context(ctx_info),
+                    force=force,
+                    # `--target` names locked elements. The reference is one
+                    # snapshot, so it has nothing to narrow.
+                    only=only if what == "locks" else (),
+                )
             except RuleSkipped as exc:
                 typer.echo(f"  skipped: {exc}")
                 continue
@@ -1257,6 +1276,73 @@ def reference_update(ctx: typer.Context) -> None:
         err=True,
     )
     raise typer.Exit(code=2)
+
+
+# ---------------------------------------------------------------------------
+# `cdec hcm` — the agent configuration that ships with the package.
+#
+# The skills, subagent, command and context section that teach a coding agent
+# the architecture-first workflow live in an hcm bundle inside the package.
+# These two commands hand that bundle to hcm; installing it into a harness is
+# then hcm's job (`hcm install code-constraints -t <harness>`).
+# ---------------------------------------------------------------------------
+
+hcm_app = typer.Typer(
+    help=(
+        "Give the bundled agent configuration (skills, subagent, command, "
+        "context) to hcm, the harness config manager. `init` registers the "
+        "bundle; `update` refreshes it after a code-constraints upgrade."
+    )
+)
+app.add_typer(hcm_app, name="hcm")
+
+
+@hcm_app.command("init")
+def hcm_init(
+    dev: bool = typer.Option(
+        False, "--dev",
+        help="Register the working copy in place, so bundle edits apply on the "
+             "next `hcm update` without re-registering. For developing the bundle.",
+    ),
+) -> None:
+    """Register the code-constraints bundle in the hcm registry.
+
+    Safe to run again at any time: the registry entry keeps its id. Afterwards,
+    install the bundle into a project with `hcm install code-constraints -t
+    <harness>`.
+    """
+    from code_constraints.cli import hcm as bridge
+
+    try:
+        bundle_dir = bridge.register(dev=dev, echo=typer.echo)
+    except bridge.HcmError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=exc.code) from exc
+    if dev:
+        typer.echo(
+            f"Development mode: hcm reads {bundle_dir} in place. After each edit, "
+            f"run `hcm update {bridge.BUNDLE_NAME}` in each test project."
+        )
+    else:
+        typer.echo(f"Next: hcm install {bridge.BUNDLE_NAME} -t <harness>")
+
+
+@hcm_app.command("update", context_settings=_PASSTHROUGH)
+def hcm_update(ctx: typer.Context) -> None:
+    """Refresh the registered bundle, then update it in the current project.
+
+    Run this after upgrading code-constraints. It registers the bundle this
+    installation ships, then runs `hcm update code-constraints` here. Extra
+    arguments go to `hcm update` — e.g. `-t claude-code`, `-s user`,
+    `--no-prompt`, `--dry-run`.
+    """
+    from code_constraints.cli import hcm as bridge
+
+    try:
+        bridge.update(ctx.args, echo=typer.echo)
+    except bridge.HcmError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=exc.code) from exc
 
 
 # ---------- helpers ----------

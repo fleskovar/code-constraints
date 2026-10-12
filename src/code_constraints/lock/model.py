@@ -218,10 +218,14 @@ def report_to_json(report: LockReport) -> dict[str, Any]:
 
 def match_any_glob(name: str, patterns: Iterable[str]) -> bool:
     """Glob match with `.` treated as a normal character, so `tests.**` matches
-    every descendant of `tests`. Mirrors `code_constraints.lint.rules.base.match_any_glob`;
-    duplicated rather than imported to keep the engines decoupled."""
+    `tests` and every descendant of it. Mirrors
+    `code_constraints.lint.rules.base.match_any_glob`; duplicated rather than
+    imported to keep the engines decoupled."""
     for p in patterns:
-        if fnmatch.fnmatchcase(name, p.replace("**", "*")):
+        pat = p.replace("**", "*")
+        if fnmatch.fnmatchcase(name, pat):
+            return True
+        if p.endswith(".**") and fnmatch.fnmatchcase(name, pat[:-2]):
             return True
     return False
 
