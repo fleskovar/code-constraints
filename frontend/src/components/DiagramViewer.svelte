@@ -252,7 +252,12 @@
   // cannot tell the two apart, Chrome turns it on at the first key press.
   let tabbed = false;
   function onKey(e: KeyboardEvent) {
-    if (e.key === "Tab") tabbed = true;
+    // The canvas takes Tab while an element is selected (it cycles the
+    // siblings). Only a Tab that the browser used to move the focus counts.
+    if (e.key === "Tab")
+      queueMicrotask(() => {
+        if (!e.defaultPrevented) tabbed = true;
+      });
     if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as Element | null;
     if (

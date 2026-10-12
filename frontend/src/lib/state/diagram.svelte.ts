@@ -126,6 +126,34 @@ export function selectMany(ids: Iterable<string>): void {
   diagramState.highlightedNodeIds = new Set(ids);
 }
 
+/** Replace the selection with `ids`. The first one is the primary node: the
+ *  inspector shows it and the Tab key cycles from it. */
+export function selectSet(ids: string[]): void {
+  setSelected(ids[0] ?? null, false);
+  if (ids.length > 1) selectMany(ids);
+}
+
+/** Add a node to the selection, or take it out (Shift+click). The node that
+ *  was added last is the primary one. */
+export function toggleSelected(id: string): void {
+  // A selected edge highlights its two ends. They are not a node selection.
+  const ids = new Set(diagramState.selectedEdgeId ? [] : selectedIds());
+  if (ids.has(id)) ids.delete(id);
+  else ids.add(id);
+  diagramState.selectedEdgeId = null;
+  diagramState.selectedClassId = ids.has(id) ? id : ([...ids].at(-1) ?? null);
+  diagramState.highlightedNodeIds = ids;
+}
+
+const VIA_CYCLE: RevealVia[] = ["inheritance", "association", "all"];
+
+/** Switch "follow" to the next kind (a double tap on Tab) and return it. */
+export function cycleRevealVia(): RevealVia {
+  const next = VIA_CYCLE[(VIA_CYCLE.indexOf(diagramState.revealVia) + 1) % VIA_CYCLE.length];
+  diagramState.revealVia = next;
+  return next;
+}
+
 /** Hide `ids` and clear the selection (the `h` key). `allIds` is every node id
  *  of the diagram, for the case that no visibility filter is set. */
 export function hideMany(ids: Iterable<string>, allIds: Iterable<string>): void {
@@ -233,18 +261,20 @@ export function selectedIds(): string[] {
 /** Grow the visible set by one directed ring around the selection (see
  *  `revealRing` for what each direction follows). Newly-added ids are pushed
  *  onto `revealStack` so Collapse can remove them, and the canvas re-runs its
- *  layout. No-op while everything is shown (`visibleClassIds === null`). */
-export function reveal(direction: RevealDirection, edges: GraphEdge[]): void {
+ *  layout. No-op while everything is shown (`visibleClassIds === null`).
+ *  Returns the ids it revealed. */
+export function reveal(direction: RevealDirection, edges: GraphEdge[]): string[] {
   const cur = diagramState.visibleClassIds;
-  if (cur === null) return;
+  if (cur === null) return [];
   const added = revealRing(cur, selectedIds(), edges, direction, diagramState.revealVia);
-  if (added.length === 0) return;
+  if (added.length === 0) return [];
   diagramState.revealStack = [...diagramState.revealStack, { direction, ids: added }];
   diagramState.visibleClassIds = new Set([...cur, ...added]);
   // A revealed node still holds its position from the full-graph layout, which
   // can be tens of thousands of pixels from its neighbour. Lay out the visible
   // subgraph again so the new ring lands next to the nodes that revealed it.
   requestRelayout();
+  return added;
 }
 
 /** Undo the most recent reveal ring, or the most recent ring of `direction`

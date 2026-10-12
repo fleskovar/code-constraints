@@ -1,6 +1,6 @@
-// Self-check for revealRing. Run: node src/lib/reveal.check.ts
+// Self-check for lib/reveal.ts. Run: node src/lib/reveal.check.ts
 import assert from "node:assert/strict";
-import { revealRing } from "./reveal.ts";
+import { revealRing, siblings, stepFrom } from "./reveal.ts";
 
 // Stored the way the backend emits them: inheritance child→parent, association
 // holder→referenced type.
@@ -52,5 +52,28 @@ assert.deepEqual(new Set(ring(["Base"], "up", "all")), new Set(["IThing", "Tests
 const pkg = [{ source: "app", target: "core" }];
 assert.deepEqual(revealRing(new Set(["app"]), ["app"], pkg, "down", "inheritance"), ["core"]);
 assert.deepEqual(revealRing(new Set(["core"]), ["core"], pkg, "up", "association"), ["app"]);
+
+// ---------- stepFrom: where the `w` / `s` keys move to ----------
+
+// Every neighbour, visible or not, without the seeds.
+assert.deepEqual(stepFrom(["Gate", "Lava"], edges, "down", "inheritance"), ["FastGate", "HotLava"]);
+assert.deepEqual(new Set(stepFrom(["Base"], edges, "up", "all")), new Set(["IThing", "Tests"]));
+assert.deepEqual(stepFrom(["Base", "Gate"], edges, "down", "inheritance"), ["Platform", "Lava", "FastGate"]);
+assert.deepEqual(stepFrom(["FastGate"], edges, "down", "inheritance"), []);
+
+// ---------- siblings: what the Tab key cycles through ----------
+
+const everything = new Set(["IThing", "Base", "Platform", "Gate", "Lava", "FastGate", "HotLava", "World", "Tests", "Solo"]);
+// The children of the same parent, the node included, in the order of `visible`.
+assert.deepEqual(siblings("Gate", everything, edges, "inheritance"), ["Platform", "Gate", "Lava"]);
+// A cousin is not a sibling: FastGate and HotLava have different parents.
+assert.deepEqual(siblings("FastGate", everything, edges, "inheritance"), ["FastGate"]);
+// A hidden sibling is not in the cycle.
+assert.deepEqual(siblings("Gate", new Set(["Base", "Gate", "Lava"]), edges, "inheritance"), ["Gate", "Lava"]);
+// No visible parent: the top level is every visible node with no visible parent.
+assert.deepEqual(siblings("Platform", new Set(["Platform", "Gate", "FastGate", "Solo"]), edges, "inheritance"), ["Platform", "Gate", "Solo"]);
+// The level follows the kind of edge in use.
+assert.deepEqual(siblings("World", everything, edges, "association"), ["World"]);
+assert.deepEqual(new Set(siblings("World", everything, edges, "all")), new Set(["Platform", "Gate", "Lava", "World"]));
 
 console.log("reveal: ok");

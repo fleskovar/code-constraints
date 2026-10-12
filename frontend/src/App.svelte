@@ -28,11 +28,14 @@
   // The workspace view that is open, if the canvas shows a parsed path. The
   // viewer saves it while the user works. A diff or a proposal has none.
   let view = $state<WorkspaceView | null>(null);
-  let viewName = $state("");
+  // The text in the rename field of the header. `null`: the name is not being
+  // edited, the header shows the name and the pencil.
+  let editingName = $state<string | null>(null);
+  let renameError = $state("");
 
   function launch(intent: HomeIntent) {
     view = intent.kind === "parse" ? (intent.view ?? null) : null;
-    viewName = view?.name ?? "";
+    cancelRename();
     // Every launch starts from the state of its view, or from a clean canvas.
     // The canvas state is one module-level object, so without this the filter
     // of the last project stays on the next one.
@@ -80,27 +83,31 @@
     }
   }
 
-  // Rename the open view. An empty or refused name puts the old one back.
+  function cancelRename() {
+    editingName = null;
+    renameError = "";
+  }
+
+  // Rename the open view in place (Enter or the OK button). A name the server
+  // refuses stays in the field with the reason, so the user can correct it.
   async function renameView() {
-    if (!project || !view) return;
-    const name = viewName.trim();
-    if (!name || name === view.name) {
-      viewName = view.name;
-      return;
-    }
+    if (!project || !view || editingName === null) return;
+    const name = editingName.trim();
+    if (name === view.name) return cancelRename();
     try {
       const saved = await api.saveWorkspaceView(project.id, view.id, { name });
       view.name = saved.name;
+      cancelRename();
     } catch (e) {
-      error = (e as Error).message;
+      renameError = (e as Error).message;
     }
-    viewName = view.name;
   }
 
   function reset() {
     project = null;
     xmi = null;
     view = null;
+    cancelRename();
     editorOnly = false;
     setMode("view");
     error = "";
@@ -213,15 +220,41 @@
       <span class="path" title={project.path}>{project.path}
         <span class="lang">{project.lang}</span>
       </span>
-      {#if view}
-        <input
-          class="view-name"
-          aria-label="View name"
-          title="The name of this view. The viewer saves the view while you work."
-          bind:value={viewName}
-          onchange={renameView}
-          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        />
+      {#if view && editingName === null}
+        <span class="view-title">
+          <span
+            class="view-name"
+            title="{view.name} — the viewer saves this view while you work">{view.name}</span
+          >
+          <button
+            class="rename-btn"
+            title="Rename this view"
+            aria-label="Rename this view"
+            onclick={() => (editingName = view!.name)}>✎</button
+          >
+        </span>
+      {:else if view}
+        <!-- A form: Enter in the field and the OK button both submit it. -->
+        <form
+          class="view-title"
+          onsubmit={(e) => {
+            e.preventDefault();
+            void renameView();
+          }}
+        >
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            class="view-name-input"
+            aria-label="View name"
+            maxlength="80"
+            autofocus
+            bind:value={editingName}
+            onfocus={(e) => e.currentTarget.select()}
+            onkeydown={(e) => e.key === "Escape" && cancelRename()}
+          />
+          <button type="submit" class="rename-ok" title="Rename the view (Enter)">OK</button>
+          {#if renameError}<span class="rename-error" role="alert">{renameError}</span>{/if}
+        </form>
       {/if}
       <nav>
         <button class:active={mode === "browse"} onclick={() => (mode = "browse")}>Browse</button>
@@ -306,21 +339,63 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .view-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0;
+    min-width: 0;
+  }
   .view-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rename-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+  .rename-btn:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .view-name-input {
     font: inherit;
     font-size: 0.875rem;
     font-weight: 600;
-    width: 11rem;
+    width: 14rem;
     padding: 0.15rem 0.4rem;
-    border: 1px solid transparent;
+    border: 1px solid var(--accent);
     border-radius: 4px;
-    background: transparent;
+    background: var(--surface);
     color: var(--fg);
   }
-  .view-name:hover,
-  .view-name:focus {
-    border-color: var(--border);
-    background: var(--surface);
+  .rename-ok {
+    background: var(--accent);
+    color: white;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 0.15rem 0.55rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    line-height: 1.4;
+  }
+  .rename-ok:hover {
+    background: #1d4ed8;
+  }
+  .rename-error {
+    color: #c63a3a;
+    font-size: 0.78rem;
+    white-space: nowrap;
   }
   .lang {
     background: var(--hover);

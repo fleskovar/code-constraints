@@ -23,6 +23,7 @@
   import {
     diagramState,
     setSelected,
+    toggleSelected,
     setVisibleSet,
     clearEdgeSelection,
     selectEdge,
@@ -318,7 +319,8 @@
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
         proOptions={{ hideAttribution: true }}
-        onnodeclick={({ node }) => setSelected(node.id, false)}
+        onnodeclick={({ node, event }) =>
+          event.shiftKey ? toggleSelected(node.id) : setSelected(node.id, false)}
         onedgeclick={({ edge }) => onEdgeClick(edge)}
         onpaneclick={() => {
           setSelected(null);

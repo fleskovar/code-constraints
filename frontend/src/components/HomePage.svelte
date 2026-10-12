@@ -47,6 +47,8 @@
   // ---------- recent paths and their views (the server keeps them in .cdec_cache) ----------
 
   let recents = $state<RecentPath[]>([]);
+  let recentsLoaded = $state(false);
+  let recentsError = $state("");
   // The path + language in the form, once the server knows it as a project.
   let current = $state<ProjectInfo | null>(null);
   const currentViews = $derived(recents.find((r) => r.id === current?.id)?.views ?? []);
@@ -54,9 +56,12 @@
   async function loadRecents() {
     try {
       recents = await api.workspace();
-    } catch {
-      // The list is a convenience. The form above works without it.
+      recentsError = "";
+    } catch (e) {
+      // The list is a convenience. The form below works without it.
+      recentsError = (e as Error).message;
     }
+    recentsLoaded = true;
   }
   onMount(loadRecents);
 
@@ -333,9 +338,72 @@
     <h1>code-constraints</h1>
     <p class="tagline">
       Parse a codebase, render UML diagrams, diff revisions. The GUI mirrors
-      the <code>uml</code> CLI verbs.
+      the <code>cdec</code> CLI verbs.
     </p>
   </div>
+
+  <!-- First on the page: most visits continue a path that is here already. -->
+  <section class="recents">
+    <h2>Recent paths</h2>
+    {#if recentsError}
+      <p class="error">The list of recent paths is not available: {recentsError}</p>
+    {:else if !recentsLoaded}
+      <p class="muted">Loading…</p>
+    {:else if recents.length === 0}
+      <p class="muted empty">
+        No path yet. Enter one below and select <strong>Parse &amp; view</strong>. The viewer
+        lists it here with its views the next time you start <code>cdec ui</code> in this
+        folder.
+      </p>
+    {:else}
+      <ul class="paths">
+        {#each recents as r (r.id)}
+          <li>
+            <div class="recent-head">
+              <div class="recent-meta">
+                <button
+                  class="path"
+                  title="{r.path} — put this path in the form below"
+                  onclick={() => useRecent(r)}>{r.path}</button
+                >
+                <span class="lang-tag">{r.lang}</span>
+                {#if !r.exists}<span class="warn-inline">folder not found</span>{/if}
+                <span class="muted">{fmtAgo(r.last_used * 1000)}</span>
+              </div>
+              <div class="recent-actions">
+                <button
+                  disabled={!r.exists || busyAction !== null}
+                  onclick={() => openView(r, null)}
+                  title="Parse the path and open a new untitled view">New view</button
+                >
+                <button
+                  disabled={!r.exists || busyAction !== null}
+                  onclick={() => quickDiffRecent(r)}
+                >
+                  Quick diff
+                </button>
+                <button
+                  class="ghost"
+                  onclick={() => forget(r.id)}
+                  title="Remove from the list. The views stay on the disk."
+                  aria-label="Remove {r.path} from the list">×</button
+                >
+              </div>
+            </div>
+            {#if r.views.length > 0}
+              {@render viewList(r, r.views, r.exists)}
+            {:else}
+              <p class="muted no-views">No views yet.</p>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
 
   <section class="picker">
     <h2>Project</h2>
@@ -546,57 +614,6 @@
     </div>
   </section>
 
-  {#if error}
-    <p class="error">{error}</p>
-  {/if}
-
-  {#if recents.length > 0}
-    <section class="recents">
-      <h2>Recent paths</h2>
-      <ul class="paths">
-        {#each recents as r (r.id)}
-          <li>
-            <div class="recent-head">
-              <div class="recent-meta">
-                <button
-                  class="path"
-                  title="{r.path} — put this path in the form above"
-                  onclick={() => useRecent(r)}>{r.path}</button
-                >
-                <span class="lang-tag">{r.lang}</span>
-                {#if !r.exists}<span class="warn-inline">folder not found</span>{/if}
-                <span class="muted">{fmtAgo(r.last_used * 1000)}</span>
-              </div>
-              <div class="recent-actions">
-                <button
-                  disabled={!r.exists || busyAction !== null}
-                  onclick={() => openView(r, null)}
-                  title="Parse the path and open a new untitled view">New view</button
-                >
-                <button
-                  disabled={!r.exists || busyAction !== null}
-                  onclick={() => quickDiffRecent(r)}
-                >
-                  Quick diff
-                </button>
-                <button
-                  class="ghost"
-                  onclick={() => forget(r.id)}
-                  title="Remove from the list. The views stay on the disk."
-                  aria-label="Remove {r.path} from the list">×</button
-                >
-              </div>
-            </div>
-            {#if r.views.length > 0}
-              {@render viewList(r, r.views, r.exists)}
-            {:else}
-              <p class="muted no-views">No views yet.</p>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/if}
 </div>
 
 <style>
@@ -960,6 +977,16 @@
   }
   .no-views {
     margin: 0.3rem 0 0 0.9rem;
+  }
+  .recents .empty {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .recents .empty code {
+    background: var(--hover);
+    padding: 0 0.3rem;
+    border-radius: 3px;
   }
   .lang-tag {
     background: var(--hover);

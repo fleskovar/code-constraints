@@ -41,6 +41,25 @@
         : "every reference line",
   );
 
+  // The shortcuts of the canvas, for the Keys menu. FitOnSelect.svelte and
+  // DiagramViewer.svelte handle them.
+  const KEYS: [string, string][] = [
+    ["Click", "Select an element. The view does not move."],
+    ["Shift + Click", "Add an element to the selection, or take it out."],
+    ["a", "Select every visible element."],
+    ["Tab / Shift + Tab", "Select the next / previous element on the same level."],
+    ["Tab + a", "Select every element on the same level."],
+    ["Tab then Tab", "Double tap: switch “follow” (Inheritance, References, All)."],
+    ["w", "Move upstream. Reveal the upstream elements that are hidden."],
+    ["s", "Move downstream. Reveal the downstream elements that are hidden."],
+    ["f", "Fit the view on the selection."],
+    ["h", "Hide the selection."],
+    ["l", "Run the automatic layout again."],
+    ["Ctrl + c", "Copy the name and the file of the selection."],
+    ["Space", "Go to the search box."],
+    ["Esc", "Clear the selection."],
+  ];
+
   const hasSelection = $derived(diagramState.selectedClassId !== null);
   // A reveal grows from the selection, and `a` selects without a single
   // selected element.
@@ -176,12 +195,19 @@
         Re-layout
       </button>
     </div>
-    <span
-      class="keys"
-      title="Keyboard: f fits the view on the selection. a selects every visible element. h hides the selection. Space moves to the search box."
-    >
-      <kbd>f</kbd> focus <kbd>a</kbd> select all <kbd>h</kbd> hide <kbd>Space</kbd> search
-    </span>
+    <ToolbarMenu label="Keys" title="Keyboard shortcuts of the canvas" align="right">
+      <dl class="keys">
+        {#each KEYS as [keys, what] (keys)}
+          <dt>
+            {#each keys.split(" ") as k, i (i)}
+              {#if k === "+" || k === "/" || k === "then"}<span class="join">{k}</span
+                >{:else}<kbd>{k}</kbd>{/if}
+            {/each}
+          </dt>
+          <dd>{what}</dd>
+        {/each}
+      </dl>
+    </ToolbarMenu>
   </div>
 {/if}
 
@@ -249,18 +275,33 @@
     cursor: not-allowed;
   }
   .keys {
-    font-size: 0.7rem;
-    color: var(--muted);
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.3rem 0.9rem;
+    margin: 0;
+    font-size: 0.78rem;
     white-space: nowrap;
+  }
+  .keys dt {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  .keys dd {
+    margin: 0;
+    color: var(--muted);
   }
   .keys kbd {
     font: inherit;
     border: 1px solid var(--border);
     border-radius: 3px;
-    padding: 0 0.25rem;
-    margin-left: 0.35rem;
+    padding: 0 0.3rem;
     background: var(--surface);
     color: var(--fg);
+  }
+  .keys .join {
+    color: var(--muted);
+    font-size: 0.7rem;
   }
   .group-label {
     font-size: 0.65rem;

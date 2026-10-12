@@ -491,12 +491,15 @@ viewer at http://127.0.0.1:8765 without a project and opens it in the browser. A
 The viewer keeps your work in a `.cdec_cache/` folder. It creates the folder in the
 directory where you start `cdec ui`, and the folder ignores itself in git.
 
-- **Recent paths**: the home page lists the paths you opened, most recently used first.
+- **Recent paths**: the first section of the home page lists the paths you opened from this
+  folder, most recently used first. You do not have to type a path again.
 - **Views**: each path has views. A view is the state of the canvas: the diagram, the
   visible elements, their positions and the display options. Open a view to continue it,
   or select **New view** to start `Untitled 1`, `Untitled 2`, and so on.
 - **Automatic save**: the viewer saves the open view while you work. You do not have to
-  name it first. To give it a name, edit the name in the header or in the home page list.
+  name it first. To give it a name, select the pencil next to the view name in the header,
+  type the name in place, and press Enter or select **OK**. Escape cancels. The home page
+  list has the same pencil.
 - **Language**: when you type a path, the viewer finds the language from the files and
   sets the dropdown. You can change it.
 
@@ -523,12 +526,27 @@ The class diagram gives you:
     reference. Each reveal runs the auto-layout again. **Step back**
     undoes the last ring. **Inspect edge** opens the two classes of the selected line.
   - **Layout**: **Re-layout** runs the auto-layout again over the visible classes.
-- **Keyboard**, on the class and package canvas. A click on a canvas element selects it
-  and does not move the view.
+- **Keyboard**, on the class and package canvas. The **Keys** menu of the toolbar shows
+  this list. A click on a canvas element selects it and does not move the view.
+  - **Shift + click** adds an element to the selection, or takes it out. **↑ upstream**,
+    **↓ downstream** and the keys below then work on every selected element.
+  - **a** selects every visible element. **Esc** clears the selection.
+  - **Tab** selects the next element on the same level: the visible elements that have the
+    same parent. **Shift + Tab** selects the previous one. Hold **Tab** and press **a** to
+    select the whole level.
+  - A double tap on **Tab** changes "follow": Inheritance, References, All.
+  - **w** moves the selection upstream and **s** moves it downstream. They first reveal the
+    elements that are hidden there. With one element selected, the selection moves to one
+    element. With many elements selected, it moves to the whole next level.
   - **f** fits the view on the selection.
-  - **a** selects every visible element.
   - **h** hides the selection. Press **a** and then **h** to clear the canvas.
+  - **l** runs the automatic layout again.
+  - **Ctrl + c** copies the selection as text, one element on each line:
+    `Namespace.Class (path/to/File.cs)`.
   - **Space** moves to the search box of the left panel.
+
+  While an element is selected, **Tab** belongs to the canvas. Press **Esc** first to move
+  the keyboard focus with **Tab**.
 - **Architecture** menu: **Layers & rules** shows the layers and their allowed
   dependencies. **Set as reference** saves the current diagram as `.cdec/reference.xmi`
   after a confirmation.

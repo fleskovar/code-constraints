@@ -249,8 +249,8 @@ Summary: 0 error(s), 1 warning(s).
 
 ### `new-class-constraints`
 
-**Fires when** a class that is not in the baseline does not extend an approved base, or
-breaks a constraint of its language.
+**Fires when** a class that is not in the baseline does not extend an approved base, or does
+not have the agreed modifiers.
 
 `no-new-classes` stops each new type. This rule permits a new type that uses the building
 blocks of the design. Use it when developers add features as subclasses of a known set of
@@ -259,22 +259,11 @@ classes, and each different kind of class needs a decision from the architect.
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | `bases` | glob or list of globs | — | The class must derive from a class that matches one glob. An indirect base through project classes counts. |
-| `csharp` | mapping | — | Constraints that apply only when the project language is C#. |
-| `python` | mapping | — | Constraints that apply only when the project language is Python. |
+| `require_modifiers` | list of globs | `[]` | Each glob must match one modifier that the class declares. |
+| `forbid_modifiers` | list of globs | `[]` | No glob may match a modifier that the class declares. |
 | `ignore` | list of globs | `[]` | Qualified names exempt from the rule. |
 
-A constraint that exists in one language sits in the block of that language:
-
-| Block | Option | Meaning |
-|---|---|---|
-| `csharp` | `require_modifiers` | List of globs. Each glob must match one modifier keyword of the type declaration: `public`, `internal`, `sealed`, `static`, `abstract`, `partial`. |
-| `csharp` | `forbid_modifiers` | List of globs. No glob may match a modifier keyword of the type declaration. |
-| `python` | `require_metaclass` | List of globs. The class must declare a metaclass that matches one glob. |
-| `python` | `forbid_metaclass` | List of globs. The class must not declare a metaclass that matches one glob. `["*"]` forbids each metaclass. |
-
-The block of a different language is ignored, so one entry can serve a C# project and a
-Python project. When no constraint applies to the project language, the entry is skipped
-with a note. A language-specific option outside its block is a config error.
+Set one option or more. An entry with none of them is skipped with a note.
 
 **Placeholders:** `{qualified_name}`, `{name}`, `{reason}` (the constraint that the class
 breaks, for example `does not have the required modifier 'sealed'`)
@@ -284,10 +273,16 @@ short name, and the qualified name of the project class it resolves to. Thus `No
 `notifications.Notifier` find the same class. The walk follows project classes only: it
 stops at a base from a framework or a library.
 
-**How the metaclass matches.** The metaclass is the value of the `metaclass=` keyword of the
-class statement. A glob is matched against the value as written and its short name, so
-`ABCMeta` matches `metaclass=ABCMeta` and `metaclass=abc.ABCMeta`. A class that inherits its
-metaclass from a base declares none.
+**What a modifier is.** A modifier is declaration text that the parser records on the class:
+
+| Language | Modifiers | Examples |
+|---|---|---|
+| C# | The modifier keywords of the type declaration. | `public`, `internal`, `sealed`, `static`, `abstract`, `partial` |
+| Python | The keywords of the class statement, as `name=value`. | `metaclass=ABCMeta`, `metaclass=abc.ABCMeta` |
+| Odin, Lua, Julia, TypeScript, Svelte | None. | An entry with a modifier option is skipped with a note. |
+
+The Python modifier is the declared keyword. A class that inherits its metaclass from a base
+does not have a `metaclass=` modifier.
 
 Each broken constraint is one violation with its own key, so an exception accepts one
 deviation of one class.
@@ -298,53 +293,46 @@ deviation of one class.
     severity: error
     scope: diff
     bases: ["Notifier", "notifications.Channel"]
-    csharp:
-      require_modifiers: ["sealed"]
-      forbid_modifiers: ["partial"]
-    python:
-      forbid_metaclass: ["*"]
+    require_modifiers: ["sealed"]            # C#
+    forbid_modifiers: ["partial"]
     ignore:
       - "Tests.**"
     message: |
       Class '{qualified_name}' {reason}. A new class in this subsystem
-      extends Notifier or Channel. Speak to the architect before you add
-      a different building block.
+      extends Notifier or Channel and is sealed. Speak to the architect
+      before you add a different building block.
+```
+
+For Python, constrain the metaclass with the same two options:
+
+```yaml
+    forbid_modifiers: ["metaclass=*"]            # a new class sets no metaclass
+    require_modifiers: ["metaclass=*ABCMeta"]    # or: a new class is an ABC
 ```
 
 **✅ Passes** — a new class that extends an approved base, directly or through a project
-class, and obeys the block of its language:
+class, with the required modifier:
 
 ```csharp
 public sealed class SmsNotifier : Notifier { }
 public sealed class HtmlEmailNotifier : EmailNotifier { }   // EmailNotifier : Notifier
 ```
 
-```python
-class SmsNotifier(Notifier): ...
-```
-
-**❌ Violates** — a new class with no approved base, or one that breaks the block of its
-language:
+**❌ Violates** — a new class with no approved base, or without the modifier:
 
 ```csharp
 public sealed class RetryPolicy { }              // extends nothing
 public class PushNotifier : Notifier { }         // not sealed
 ```
 
-```python
-class PushNotifier(Notifier, metaclass=Registry): ...   # declares a metaclass
-```
-
-The C# run:
-
 ```
 [new-classes-use-the-building-blocks] (error)
   - Notifications.PushNotifier — Notifications/Push.cs:4: Class 'Notifications.PushNotifier' does not have the required modifier 'sealed'. A new class in this subsystem
-      extends Notifier or Channel. Speak to the architect before you add
-      a different building block.
+      extends Notifier or Channel and is sealed. Speak to the architect
+      before you add a different building block.
   - Notifications.RetryPolicy — Notifications/Retry.cs:4: Class 'Notifications.RetryPolicy' does not inherit from an approved base (Notifier, notifications.Channel). A new class in this subsystem
-      extends Notifier or Channel. Speak to the architect before you add
-      a different building block.
+      extends Notifier or Channel and is sealed. Speak to the architect
+      before you add a different building block.
 
 Summary: 2 error(s), 0 warning(s).
 ```

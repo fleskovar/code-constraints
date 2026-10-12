@@ -22,6 +22,7 @@
   import {
     diagramState,
     setSelected,
+    toggleSelected,
     clearEdgeSelection,
     selectEdge,
     setNodePosition,
@@ -152,7 +153,8 @@
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
         proOptions={{ hideAttribution: true }}
-        onnodeclick={({ node }) => setSelected(node.id, false)}
+        onnodeclick={({ node, event }) =>
+          event.shiftKey ? toggleSelected(node.id) : setSelected(node.id, false)}
         onedgeclick={({ edge }) => onEdgeClick(edge)}
         onpaneclick={() => {
           setSelected(null);
@@ -173,6 +175,7 @@
   .flow-wrap {
     height: 100%;
     width: 100%;
+    position: relative;
   }
   .error {
     color: #c63a3a;
