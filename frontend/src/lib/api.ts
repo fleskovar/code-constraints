@@ -299,6 +299,8 @@ export interface ClassDraft {
   bases: string[];
   /** Raw type-name strings referenced in method bodies (parser-derived). */
   dependencies?: string[];
+  /** Declaration modifiers as source text, e.g. `sealed` or `metaclass=ABCMeta` (parser-derived). */
+  modifiers?: string[];
   location: { file: string; start_line: number; end_line: number } | null;
   layout: {
     x: number;

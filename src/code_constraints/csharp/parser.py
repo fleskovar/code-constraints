@@ -181,6 +181,7 @@ def _ingest_class(
         qualified_name=qn,
         kind=_kind_for(node, source),
         bases=_bases(node, source),
+        modifiers=_modifiers(node, source),
         location=SourceLocation(
             file=file_str,
             start_line=node.start_point[0] + 1,

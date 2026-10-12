@@ -89,6 +89,9 @@ more work.
 - `max-class-fanout`: split the class, or make it depend on an interface.
 - `dangling-classes`: delete the dead class. If a framework creates it, ask to add it to
   `entry_points`.
+- `new-class-constraints`: make the new class extend an approved base, or correct the
+  modifier or the metaclass that the message names. Do not add a new base class without
+  approval.
 - `no-new-classes`, `no-removed-classes`, `frozen-members`: the shape changed against the
   baseline. Revert the change, or go through the design loop.
 - `frozen-rules`: a constraint tag was removed or its arguments changed. Put the tag back

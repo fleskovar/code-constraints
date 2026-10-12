@@ -141,6 +141,19 @@ def test_static_class_gets_static_kind(tmp_path) -> None:
     assert widget.kind == "class"
 
 
+def test_class_modifiers_are_recorded(tmp_path) -> None:
+    """`new-class-constraints` reads these, so `sealed` must reach the model."""
+    src = (
+        'namespace P;\n'
+        'public sealed class Leaf { }\n'
+        'class Plain { }\n'
+    )
+    (tmp_path / "p.cs").write_text(src, encoding="utf-8")
+    project = parse_project(tmp_path)
+    assert _find_class(project, "P.Leaf").modifiers == ["public", "sealed"]
+    assert _find_class(project, "P.Plain").modifiers == []
+
+
 def test_class_with_inheritance() -> None:
     project = parse_project(FIXTURE)
     dog = _find_class(project, "Zoo.Animals.Dog")

@@ -139,6 +139,10 @@ def _read_class(el: etree._Element) -> Class:
         dep = dep_el.get("type", "")
         if dep:
             cls.dependencies.append(dep)
+    for mod_el in el.findall(f"{CDEC}modifier"):
+        modifier = mod_el.get("name", "")
+        if modifier:
+            cls.modifiers.append(modifier)
     for attr_el in el.findall("ownedAttribute"):
         cls.attributes.append(_read_attribute(attr_el))
     for op_el in el.findall("ownedOperation"):

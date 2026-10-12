@@ -1,0 +1,14 @@
+rules:
+  - id: new-class-constraints
+    type: new-class-constraints
+    severity: error
+    scope: diff
+    bases: ["Notifier"]
+    python:
+      forbid_metaclass: ["*"]
+    ignore:
+      - "testing.**"
+    message: |
+      Class '{qualified_name}' {reason}. A new class in this subsystem
+      extends Notifier and sets no metaclass. Speak to the architect before
+      you add a different building block.

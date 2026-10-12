@@ -6,7 +6,7 @@ import fnmatch
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 
 from code_constraints.core.keys import make_key
 from code_constraints.core.model import Class, DiffStatus, Project, SourceLocation
@@ -195,6 +195,38 @@ class Rule:
         baseline is one indivisible snapshot ignores it.
         """
         return []
+
+
+def ancestors(cls: Class, ctx: RuleContext) -> Iterator[tuple[str, Class | None]]:
+    """Yield each base of `cls`, direct or inherited through project classes,
+    as `(base text, the project class it resolves to)`.
+
+    The class is `None` for a base outside the project (a framework type), and
+    the walk stops there. A base resolves by qualified name first, then by short
+    name, with generic arguments dropped — the same fallback the engine uses to
+    build the reference graph."""
+    stack: list[str] = list(cls.bases)
+    seen: set[str] = set()
+    while stack:
+        base = stack.pop()
+        if base in seen:
+            continue
+        seen.add(base)
+        parent = ctx.class_by_qn.get(base)
+        if parent is None:
+            simple = short_name(base)
+            parent = next(
+                (c for qn, c in ctx.class_by_qn.items() if qn.split(".")[-1] == simple),
+                None,
+            )
+        yield base, parent
+        if parent is not None:
+            stack.extend(parent.bases)
+
+
+def short_name(type_text: str) -> str:
+    """`app.repos.Repository<Order>` -> `Repository`."""
+    return type_text.split("<")[0].split(".")[-1]
 
 
 def changed_classes(ctx: RuleContext, only_status: DiffStatus | None = None) -> Iterable[Class]:

@@ -88,6 +88,21 @@ def test_sequence_tag_produces_sequence() -> None:
     assert "capture()" in labels
 
 
+def test_class_keywords_become_modifiers(tmp_path) -> None:
+    """`new-class-constraints` reads these, so `metaclass=` must reach the model."""
+    (tmp_path / "mod.py").write_text(
+        "class Registered(Base, metaclass=Registry):\n"
+        "    pass\n"
+        "class Plain(Base):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    project = parse_project(tmp_path)
+    classes = {c.name: c for c in project.iter_classes()}
+    assert classes["Registered"].modifiers == ["metaclass=Registry"]
+    assert classes["Plain"].modifiers == []
+
+
 def test_sequence_call_order_is_inner_first(tmp_path) -> None:
     """`payment.charge(payment.total())` must emit `total()` before `charge()`."""
     pkg = tmp_path / "pkg"

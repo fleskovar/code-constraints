@@ -162,6 +162,7 @@ For every architecture proposal that involves enforcement, propose a `.cdec/` fo
 
 Useful rule types you can configure in `rules.yaml`:
 - `no-new-classes` / `no-removed-classes` — freeze the class surface (scope: diff)
+- `new-class-constraints` — a new class must extend an approved base and carry the agreed modifiers (scope: diff)
 - `frozen-members` — prevent attribute/operation removal (scope: diff)
 - `forbidden-references` — forbid specific class-to-class imports
 - `forbidden-package-references` — enforce layer isolation at package level

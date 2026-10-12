@@ -6,7 +6,14 @@ from typing import Iterable
 
 from code_constraints.core.model import Class, DiffStatus
 from code_constraints.lint.rules import register
-from code_constraints.lint.rules.base import Rule, RuleContext, Violation, match_any_glob
+from code_constraints.lint.rules.base import (
+    Rule,
+    RuleContext,
+    Violation,
+    ancestors,
+    match_any_glob,
+    short_name,
+)
 
 # Framework base classes whose subclasses are instantiated by the framework
 # (Unity scenes, the editor, networking) rather than by project code, so they
@@ -77,22 +84,4 @@ def _derives_from_framework(
 ) -> bool:
     """True if `cls` derives (directly or transitively through project
     ancestors) from any base name in `framework_bases`."""
-    stack: list[str] = list(cls.bases)
-    seen: set[str] = set()
-    while stack:
-        base = stack.pop()
-        if base in seen:
-            continue
-        seen.add(base)
-        simple = base.split(".")[-1].split("<")[0]
-        if simple in framework_bases:
-            return True
-        parent = ctx.class_by_qn.get(base)
-        if parent is None:
-            for parent_qn, candidate in ctx.class_by_qn.items():
-                if parent_qn.split(".")[-1] == simple:
-                    parent = candidate
-                    break
-        if parent is not None:
-            stack.extend(parent.bases)
-    return False
+    return any(short_name(base) in framework_bases for base, _ in ancestors(cls, ctx))

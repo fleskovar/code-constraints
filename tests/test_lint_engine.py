@@ -100,6 +100,110 @@ def test_no_new_classes_skipped_without_diff() -> None:
     assert any(rule.rule_id == r[0] for r in report.skipped)
 
 
+# ---------------- new-class-constraints ----------------
+
+def _with_new_classes(*classes: Class) -> Project:
+    old = _base_project()
+    new = deepcopy(old)
+    new.packages[0].classes.extend(classes)
+    return diff_projects(old, new)
+
+
+def test_new_class_constraints_requires_an_approved_base() -> None:
+    annotated = _with_new_classes(
+        Class(name="Cat", qualified_name="zoo.Cat", bases=["Animal"]),
+        # Inherits Animal through Dog, a project class.
+        Class(name="Puppy", qualified_name="zoo.Puppy", bases=["Dog"]),
+        Class(name="Helper", qualified_name="zoo.Helper"),
+        Class(name="Robot", qualified_name="zoo.Robot", bases=["Machine"]),
+    )
+    rule = _make_rule("new-class-constraints", scope="diff", bases=["zoo.Animal"])
+    report = run_checks(annotated, [rule], has_diff=True)
+    # `zoo.Animal` has no base either, but it is not new.
+    assert {(v.qualified_name, v.signature) for v in report.violations} == {
+        ("zoo.Helper", "bases"),
+        ("zoo.Robot", "bases"),
+    }
+
+
+def _csharp(annotated: Project) -> Project:
+    annotated.source_language = "csharp"
+    return annotated
+
+
+def test_new_class_constraints_checks_csharp_modifiers() -> None:
+    annotated = _csharp(_with_new_classes(
+        Class(name="Cat", qualified_name="zoo.Cat", modifiers=["public", "sealed"]),
+        Class(name="Lion", qualified_name="zoo.Lion", modifiers=["public", "partial"]),
+    ))
+    rule = _make_rule(
+        "new-class-constraints", scope="diff",
+        csharp={"require_modifiers": ["sealed"], "forbid_modifiers": ["partial"]},
+        # Another language's block is inert here.
+        python={"require_metaclass": ["Registry"]},
+    )
+    report = run_checks(annotated, [rule], has_diff=True)
+    assert {(v.qualified_name, v.signature) for v in report.violations} == {
+        ("zoo.Lion", "require:sealed"),
+        ("zoo.Lion", "forbid:partial"),
+    }
+
+
+def test_new_class_constraints_checks_python_metaclass() -> None:
+    annotated = _with_new_classes(
+        Class(name="Cat", qualified_name="zoo.Cat"),
+        Class(name="Lion", qualified_name="zoo.Lion", modifiers=["metaclass=abc.ABCMeta"]),
+        Class(name="Owl", qualified_name="zoo.Owl", modifiers=["metaclass=Registry"]),
+    )
+    require = _make_rule(
+        "new-class-constraints", scope="diff", rule_id="require",
+        python={"require_metaclass": ["ABCMeta"]},
+        # Another language's block is inert here.
+        csharp={"require_modifiers": ["sealed"]},
+    )
+    forbid = _make_rule(
+        "new-class-constraints", scope="diff", rule_id="forbid",
+        python={"forbid_metaclass": ["Registry*"]},
+    )
+    report = run_checks(annotated, [require, forbid], has_diff=True)
+    assert {(v.rule_id, v.qualified_name, v.signature) for v in report.violations} == {
+        ("require", "zoo.Cat", "require_metaclass"),
+        ("require", "zoo.Owl", "require_metaclass"),
+        ("forbid", "zoo.Owl", "forbid_metaclass"),
+    }
+
+
+def test_new_class_constraints_snapshot_scope_checks_every_class() -> None:
+    rule = _make_rule("new-class-constraints", scope="snapshot", bases=["Animal"])
+    report = run_checks(_base_project(), [rule], has_diff=False)
+    assert [v.qualified_name for v in report.violations] == ["zoo.Animal"]
+
+
+def test_new_class_constraints_skips_when_no_constraint_applies() -> None:
+    no_options = _make_rule("new-class-constraints", scope="snapshot", rule_id="empty")
+    other_language = _make_rule(
+        "new-class-constraints", scope="snapshot", rule_id="csharp-only",
+        csharp={"require_modifiers": ["sealed"]},
+    )
+    report = run_checks(_base_project(), [no_options, other_language], has_diff=False)
+    assert report.violations == []
+    assert [rule_id for rule_id, _ in report.skipped] == ["empty", "csharp-only"]
+
+
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        # A language-specific option outside its block would be ignored silently.
+        ({"require_modifiers": ["sealed"]}, "put it in a 'csharp:' block"),
+        ({"python": {"require_modifiers": ["sealed"]}}, "unknown option 'require_modifiers' in 'python'"),
+        ({"lua": {"require_modifiers": ["sealed"]}}, "unknown option 'lua'"),
+    ],
+)
+def test_new_class_constraints_rejects_misplaced_options(options, expected) -> None:
+    with pytest.raises(ValueError, match=expected):
+        _make_rule("new-class-constraints", scope="snapshot", **options)
+
+
 # ---------------- no-removed-classes ----------------
 
 def test_no_removed_classes_fires() -> None:

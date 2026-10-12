@@ -957,6 +957,7 @@ the default (override per entry).
 | `type` | Key options | Fires when… |
 |--------|-------------|-------------|
 | `no-new-classes` | `ignore` | A class is added vs the baseline. |
+| `new-class-constraints` | `bases`, `csharp` (`require_modifiers`, `forbid_modifiers`), `python` (`require_metaclass`, `forbid_metaclass`) | A class added vs the baseline does not extend an approved base, or breaks a constraint of its language block. |
 | `no-removed-classes` | `ignore` | A class is removed vs the baseline. |
 | `frozen-members` | `classes`, `members`, `kinds` | An attribute/operation on a matched class is added, removed, or changed. |
 | `frozen-rules` | `classes` | An architectural-rule tag present in the baseline is removed or weakened. |

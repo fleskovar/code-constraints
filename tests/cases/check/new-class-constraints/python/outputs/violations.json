@@ -1,0 +1,20 @@
+[
+  {
+    "element": "notifications.PushNotifier",
+    "member": "forbid_metaclass",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  },
+  {
+    "element": "notifications.Registry",
+    "member": "bases",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  },
+  {
+    "element": "notifications.RetryPolicy",
+    "member": "bases",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  }
+]

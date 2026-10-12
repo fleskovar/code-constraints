@@ -1,0 +1,14 @@
+rules:
+  - id: new-class-constraints
+    type: new-class-constraints
+    severity: error
+    scope: diff
+    bases: ["Notifier"]
+    csharp:
+      require_modifiers: ["sealed"]
+    ignore:
+      - "Testing.**"
+    message: |
+      Class '{qualified_name}' {reason}. A new class in this subsystem
+      extends Notifier and is sealed. Speak to the architect before you add
+      a different building block.

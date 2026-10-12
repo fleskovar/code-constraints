@@ -428,6 +428,9 @@ output:
 #
 # --- model rules (read the parsed architecture) ---
 #   no-new-classes, no-removed-classes ....... structural drift  (scope: diff)
+#   new-class-constraints .................... a new class extends an approved
+#                                              base and obeys its `csharp:` or
+#                                              `python:` block (diff)
 #   frozen-members ........................... a class's public shape (diff)
 #   frozen-rules ............................. the constraint tags themselves (diff)
 #   forbidden-references ..................... class A may not reference class B
@@ -449,6 +452,7 @@ output:
 # Placeholders available in `message`, by type:
 #   no-new-classes / no-removed-classes / dangling-classes:
 #     {{qualified_name}}                (max-class-fanout adds {{fanout}}, {{limit}})
+#   new-class-constraints:     {{qualified_name}}, {{name}}, {{reason}}
 #   frozen-members:            {{qualified_name}}, {{member}}, {{kind}}, {{action}}
 #   forbidden-*-references:    {{qualified_name}}, {{source}}, {{target}}
 #   subclass-naming:           {{qualified_name}}, {{name}}, {{base}}, {{pattern}}

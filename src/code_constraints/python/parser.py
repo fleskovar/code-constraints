@@ -134,6 +134,7 @@ def _class_from_node(
         qualified_name=qn,
         kind=_class_kind(node),
         bases=[_unparse(b) for b in node.bases],
+        modifiers=[f"{kw.arg}={_unparse(kw.value)}" for kw in node.keywords if kw.arg],
         location=SourceLocation(
             file=file,
             start_line=getattr(node, "lineno", 0),

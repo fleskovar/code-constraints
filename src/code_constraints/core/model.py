@@ -130,6 +130,11 @@ class Class:
     # to draw "uses" edges and count incoming references. Empty for pre-existing
     # XMI and for parsers that don't scan bodies.
     dependencies: list[str] = field(default_factory=list)
+    # Declaration modifiers as source text: the C# keywords (`public`, `sealed`,
+    # `static`) and the Python class keywords (`metaclass=ABCMeta`). Read by the
+    # `new-class-constraints` rule. The diff and the reference gate do not
+    # compare it. Empty for the other parsers and for pre-existing XMI.
+    modifiers: list[str] = field(default_factory=list)
 
     def stable_id(self) -> str:
         return _stable_id("Class", self.qualified_name)

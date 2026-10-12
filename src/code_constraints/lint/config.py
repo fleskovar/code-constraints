@@ -344,14 +344,19 @@ def _build_rule(
         raise ConfigError(f"{path}: rules[{i}] (id={rule_id}) 'ignore' must be a list")
     reserved = {"id", "type", "severity", "scope", "message", "ignore"}
     options: dict[str, Any] = {k: v for k, v in entry.items() if k not in reserved}
-    return rule_cls(
-        rule_id=rule_id,
-        severity=severity,
-        scope=scope,
-        message=entry.get("message", ""),
-        ignore=ignore,
-        options=options,
-    )
+    try:
+        return rule_cls(
+            rule_id=rule_id,
+            severity=severity,
+            scope=scope,
+            message=entry.get("message", ""),
+            ignore=ignore,
+            options=options,
+        )
+    except ValueError as exc:
+        # A rule that validates its options in `__init__` reports here, so a
+        # bad entry is a config error and not a traceback in the middle of a run.
+        raise ConfigError(f"{path}: rules[{i}] (id={rule_id}): {exc}") from exc
 
 
 def _resolve(path_value: str | None, base: Path) -> Path:

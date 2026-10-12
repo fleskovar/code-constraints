@@ -147,6 +147,7 @@ def _read_class(raw: dict[str, Any]) -> Class:
         operations=[_read_operation(o) for o in raw.get("operations", []) or []],
         bases=list(raw.get("bases", []) or []),
         dependencies=list(raw.get("dependencies", []) or []),
+        modifiers=list(raw.get("modifiers", []) or []),
         location=_location(raw.get("location")),
         layout=_layout(raw.get("layout")),
         description=raw.get("description") or None,

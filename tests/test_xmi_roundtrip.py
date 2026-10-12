@@ -51,6 +51,7 @@ def _sample_project() -> Project:
         qualified_name="zoo.Dog",
         kind="class",
         bases=["zoo.Animal"],
+        modifiers=["public", "sealed"],
         operations=[Operation(name="bark", return_type="None")],
     )
     pkg = Package(name="zoo", qualified_name="zoo", classes=[animal, dog])
@@ -105,6 +106,8 @@ def test_roundtrip_preserves_model(tmp_path: Path) -> None:
 
     dog = zoo.classes[1]
     assert dog.bases == ["zoo.Animal"]
+    assert dog.modifiers == ["public", "sealed"]
+    assert animal.modifiers == []
 
     assert len(loaded.activities) == 1
     act = loaded.activities[0]

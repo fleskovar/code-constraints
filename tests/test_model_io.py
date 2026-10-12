@@ -37,6 +37,7 @@ def _sample_project() -> Project:
             )
         ],
         bases=["billing.Document"],
+        modifiers=["metaclass=ABCMeta"],
         rules=[RuleAnnotation(name="immutable"), RuleAnnotation(name="layer", args=['"domain"'])],
     )
     pkg = Package(name="billing", qualified_name="billing", classes=[cls])

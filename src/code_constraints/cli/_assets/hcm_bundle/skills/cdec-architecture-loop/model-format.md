@@ -39,6 +39,7 @@ TypeScript and Svelte. Use no spaces and no hyphens.
 | `operations` | list of operation | The methods. |
 | `rules` | list of rule tag | The constraint tags on the class. |
 | `dependencies` | list of string | Classes that the method bodies use. `cdec parse` fills this list. |
+| `modifiers` | list of string | Declaration modifiers as source text: `sealed` in C#, `metaclass=ABCMeta` in Python. `cdec parse` fills this list. |
 | `description` | string | Why the class exists. Write it for each new class. |
 
 The class is matched with the code by `qualified_name`. A different qualified name is a

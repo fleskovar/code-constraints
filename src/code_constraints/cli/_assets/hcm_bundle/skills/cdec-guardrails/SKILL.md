@@ -60,6 +60,8 @@ architecture proposal. See the `cdec-architecture-first` skill.
 | "This interface is a published contract." | `frozen-members` |
 | "No public class disappears." | `no-removed-classes` |
 | "Each new class in this subsystem goes through design review." | `no-new-classes` |
+| "A new class extends one of the approved base classes." | `new-class-constraints` |
+| "Each new C# class is sealed", or "no new Python class sets a metaclass" | `new-class-constraints` |
 | "There is one way to construct this type." | `factory` tag + `no-instantiation` tag + `tag-conformance` |
 | "This service wires its collaborators. It does not build them." | `no-instantiation` tag + `tag-conformance` |
 | "This is a value object." | `immutable` tag + `sealed` tag + `tag-conformance` |

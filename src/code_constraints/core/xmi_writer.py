@@ -148,6 +148,9 @@ def _write_class(parent: etree._Element, cls: Class) -> None:
         dep_el = etree.SubElement(el, f"{CDEC}dependency")
         dep_el.set("type", dep)
 
+    for modifier in cls.modifiers:
+        etree.SubElement(el, f"{CDEC}modifier").set("name", modifier)
+
     for attr in cls.attributes:
         _write_attribute(el, attr, owner_qname=cls.qualified_name)
     for op in cls.operations:

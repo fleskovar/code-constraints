@@ -7,6 +7,7 @@ use in `message:`.
 | Type | Default scope | What fails |
 | --- | --- | --- |
 | [`no-new-classes`](#no-new-classes) | diff | A class that is not in the baseline |
+| [`new-class-constraints`](#new-class-constraints) | diff | A new class without an approved base, or one that breaks a constraint of its language |
 | [`no-removed-classes`](#no-removed-classes) | diff | A baseline class that is gone |
 | [`frozen-members`](#frozen-members) | diff | A member that was added, removed or changed |
 | [`frozen-rules`](#frozen-rules) | diff | A constraint tag that was removed or changed |
@@ -61,6 +62,59 @@ Placeholders: `{qualified_name}`
       New class '{qualified_name}' appeared. Agree each new type in this
       subsystem first: add it to the model and run `cdec propose`.
 ```
+
+### `new-class-constraints`
+
+Fails when a class that is not in the baseline breaks one of the configured constraints.
+Use it when new code must use the building blocks of the design. `no-new-classes` stops
+each new class. This rule permits a new class that extends an approved base.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `bases` | — | Globs. The class must derive from a match. An indirect base through project classes counts. |
+| `csharp` | — | A block of constraints that apply only to a C# project. |
+| `python` | — | A block of constraints that apply only to a Python project. |
+| `ignore` | `[]` | Qualified-name globs that are exempt. |
+
+A constraint that exists in one language goes in the block of that language:
+
+| Block | Option | Meaning |
+| --- | --- | --- |
+| `csharp` | `require_modifiers` | Globs. Each glob must match one modifier keyword, for example `sealed` or `static`. |
+| `csharp` | `forbid_modifiers` | Globs. No glob may match a modifier keyword, for example `partial`. |
+| `python` | `require_metaclass` | Globs. The class must declare a metaclass that matches one glob. |
+| `python` | `forbid_metaclass` | Globs. The class must not declare a metaclass that matches one glob. `["*"]` forbids each metaclass. |
+
+`cdec check` ignores the block of a different language. It skips an entry when no constraint
+applies to the project language. A language-specific option outside its block is a config
+error.
+
+Placeholders: `{qualified_name}`, `{name}`, `{reason}`
+
+A `bases` glob is matched against the base as the source writes it, its short name, and the
+qualified name of the project class.
+
+The metaclass is the value of the `metaclass=` keyword. `ABCMeta` matches `abc.ABCMeta`
+also. A metaclass that the class inherits from a base is not seen.
+
+Each broken constraint is one violation with its own key.
+
+```yaml
+  - id: new-classes-use-the-building-blocks
+    type: new-class-constraints
+    severity: error
+    bases: ["Notifier", "notifications.Channel"]
+    csharp:
+      require_modifiers: ["sealed"]
+    python:
+      forbid_metaclass: ["*"]
+    ignore: ["Tests.**"]
+    message: |
+      Class '{qualified_name}' {reason}. A new class in this subsystem extends
+      Notifier or Channel. Speak to the architect first.
+```
+
+With `scope: snapshot` the rule checks each class. Then put the approved bases in `ignore`.
 
 ### `no-removed-classes`
 

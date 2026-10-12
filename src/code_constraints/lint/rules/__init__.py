@@ -30,6 +30,7 @@ def known_rule_types() -> list[str]:
 # @register decorator runs.
 from code_constraints.lint.rules import (  # noqa: E402, F401
     no_new_classes,
+    new_class_constraints,
     no_removed_classes,
     dangling_classes,
     frozen_members,

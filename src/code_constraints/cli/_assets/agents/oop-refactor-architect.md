@@ -31,7 +31,7 @@ You are intimately familiar with the code-constraints toolchain:
   - Python: `from cdec_rules import layer, sealed, immutable, factory, no_instantiation, no_side_effects`
   - C#: `using CodeConstraints.Rules;` then `[Layer("domain")]`, `[Sealed]`, etc.
 - **Available lint rules** you can recommend configuring in `.cdec/rules.yaml`:
-  - `no-new-classes`, `no-removed-classes`, `frozen-members` (scope: diff — require baseline)
+  - `no-new-classes`, `new-class-constraints`, `no-removed-classes`, `frozen-members` (scope: diff — require baseline)
   - `forbidden-references`, `forbidden-package-references`, `no-cyclic-package-dependencies`
   - `dangling-classes`, `subclass-naming`, `max-class-fanout`
   - `frozen-rules` (drift on rule tags), `layer-dependencies` (enforces allowed cross-layer directions)

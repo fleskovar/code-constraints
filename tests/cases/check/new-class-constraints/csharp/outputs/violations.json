@@ -1,0 +1,26 @@
+[
+  {
+    "element": "Notifications.NotifierHelpers",
+    "member": "bases",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  },
+  {
+    "element": "Notifications.NotifierHelpers",
+    "member": "require:sealed",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  },
+  {
+    "element": "Notifications.PushNotifier",
+    "member": "require:sealed",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  },
+  {
+    "element": "Notifications.RetryPolicy",
+    "member": "bases",
+    "rule": "new-class-constraints",
+    "severity": "error"
+  }
+]

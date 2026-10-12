@@ -16,7 +16,7 @@ failing code look like.
 | § | Section | Configured in |
 |---|---|---|
 | [1](#1--configured-rules-cdecrulesyaml) | **Configured rules** — the `type:` values for `rules.yaml` | `.cdec/rules.yaml` |
-| [1.1](#11-structural-drift) | Structural drift — `no-new-classes`, `no-removed-classes`, `frozen-members`, `frozen-rules` | |
+| [1.1](#11-structural-drift) | Structural drift — `no-new-classes`, `new-class-constraints`, `no-removed-classes`, `frozen-members`, `frozen-rules` | |
 | [1.2](#12-dependency--layering) | Dependency & layering — `forbidden-references`, `forbidden-package-references`, `no-cyclic-package-dependencies`, `layer-dependencies` | |
 | [1.3](#13-shape--complexity) | Shape & complexity — `dangling-classes`, `subclass-naming`, `max-class-fanout` | |
 | [2](#2--source-level-constraint-tags) | **Constraint tags** — decorators/attributes written in the code | source |
@@ -38,7 +38,7 @@ them, so one command gives one report without coupling four different analyses.
 
 | Engine | `type:` | Question it answers | Reads method bodies? | Needs a baseline? | Key |
 |---|---|---|---|---|---|
-| **A — drift & shape** | the eleven model rules | "Did the architecture drift, and does it obey the laws we wrote down?" | No (model only) | For `scope: diff` rules | `V-` |
+| **A — drift & shape** | the twelve model rules | "Did the architecture drift, and does it obey the laws we wrote down?" | No (model only) | For `scope: diff` rules | `V-` |
 | **B — conformance** | `tag-conformance` | "Does the code actually obey its tags right now?" | Yes | No | `F-` |
 | **C — freeze** | `implementation-locks` | "Did this specific implementation change at all?" | Yes (digests them) | The `locks:` ledger | `L-` |
 | **D — reference gate** | `reference-architecture` | "Did *anything* about the public shape change?" | No (model only) | `reference.xmi` | `R-` |
@@ -53,6 +53,7 @@ was unified still resolves.
 | Constraint | Kind | Engine | Section |
 |---|---|---|---|
 | `no-new-classes` | rules.yaml | A | [1.1](#no-new-classes) |
+| `new-class-constraints` | rules.yaml | A | [1.1](#new-class-constraints) |
 | `no-removed-classes` | rules.yaml | A | [1.1](#no-removed-classes) |
 | `frozen-members` | rules.yaml | A | [1.1](#frozen-members) |
 | `frozen-rules` | rules.yaml | A | [1.1](#frozen-rules) |
@@ -84,7 +85,7 @@ Every constraint below is pinned by at least one **human-readable case folder** 
 and a `README.md` whose walkthrough derives the second from the first by hand. Each ✓ links
 to that walkthrough — the fastest way to see exactly what a rule does to real code and why.
 
-The matrix is **capability-targeted**, not a full cross-product. The eleven model rules run
+The matrix is **capability-targeted**, not a full cross-product. The twelve model rules run
 on the language-agnostic `Project` model, so their logic is proven once (Python + C#) and the
 five other parsers are covered on the rules that actually stress their reference graph —
 `forbidden-package-references`, `dangling-classes`, `subclass-naming`, and (for the tag
@@ -107,6 +108,7 @@ Run them with `make test-cases`, one with
 | Constraint | Engine | Py | C# | Odin | Lua | Jul | TS | Svelte |
 |---|---|---|---|---|---|---|---|---|
 | [`no-new-classes`](#no-new-classes) | A | [✓](../tests/cases/check/no-new-classes/python/README.md) | [✓](../tests/cases/check/no-new-classes/csharp/README.md) | — | — | — | — | — |
+| [`new-class-constraints`](#new-class-constraints) | A | [✓](../tests/cases/check/new-class-constraints/python/README.md) | [✓](../tests/cases/check/new-class-constraints/csharp/README.md) | — | — | — | — | — |
 | [`no-removed-classes`](#no-removed-classes) | A | [✓](../tests/cases/check/no-removed-classes/python/README.md) | [✓](../tests/cases/check/no-removed-classes/csharp/README.md) | — | — | — | — | — |
 | [`frozen-members`](#frozen-members) | A | [✓](../tests/cases/check/frozen-members/python/README.md) | [✓](../tests/cases/check/frozen-members/csharp/README.md) | — | — | — | — | — |
 | [`frozen-rules`](#frozen-rules) | A | [✓](../tests/cases/check/frozen-rules/python/README.md) | [✓](../tests/cases/check/frozen-rules/csharp/README.md) | [✓](../tests/cases/check/frozen-rules/odin/README.md) | [✓](../tests/cases/check/frozen-rules/lua/README.md) | [✓](../tests/cases/check/frozen-rules/julia/README.md) | — | — |
@@ -183,7 +185,7 @@ there is no separate import graph. Self-references and intra-package edges are d
 
 ## 1.1 Structural drift
 
-These four answer "did the shape change since we agreed on it?". All default to
+These five answer "did the shape change since we agreed on it?". All default to
 `scope: diff` and need a baseline (`.cdec/reference.xmi`, `--reference`, or `--base-ref`).
 
 ---
@@ -242,6 +244,114 @@ class ExpressOrder(Order):      # not present in .cdec/reference.xmi
 
 Summary: 0 error(s), 1 warning(s).
 ```
+
+---
+
+### `new-class-constraints`
+
+**Fires when** a class that is not in the baseline does not extend an approved base, or
+breaks a constraint of its language.
+
+`no-new-classes` stops each new type. This rule permits a new type that uses the building
+blocks of the design. Use it when developers add features as subclasses of a known set of
+classes, and each different kind of class needs a decision from the architect.
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `bases` | glob or list of globs | — | The class must derive from a class that matches one glob. An indirect base through project classes counts. |
+| `csharp` | mapping | — | Constraints that apply only when the project language is C#. |
+| `python` | mapping | — | Constraints that apply only when the project language is Python. |
+| `ignore` | list of globs | `[]` | Qualified names exempt from the rule. |
+
+A constraint that exists in one language sits in the block of that language:
+
+| Block | Option | Meaning |
+|---|---|---|
+| `csharp` | `require_modifiers` | List of globs. Each glob must match one modifier keyword of the type declaration: `public`, `internal`, `sealed`, `static`, `abstract`, `partial`. |
+| `csharp` | `forbid_modifiers` | List of globs. No glob may match a modifier keyword of the type declaration. |
+| `python` | `require_metaclass` | List of globs. The class must declare a metaclass that matches one glob. |
+| `python` | `forbid_metaclass` | List of globs. The class must not declare a metaclass that matches one glob. `["*"]` forbids each metaclass. |
+
+The block of a different language is ignored, so one entry can serve a C# project and a
+Python project. When no constraint applies to the project language, the entry is skipped
+with a note. A language-specific option outside its block is a config error.
+
+**Placeholders:** `{qualified_name}`, `{name}`, `{reason}` (the constraint that the class
+breaks, for example `does not have the required modifier 'sealed'`)
+
+**How `bases` matches.** A glob is matched against the base as the source writes it, its
+short name, and the qualified name of the project class it resolves to. Thus `Notifier` and
+`notifications.Notifier` find the same class. The walk follows project classes only: it
+stops at a base from a framework or a library.
+
+**How the metaclass matches.** The metaclass is the value of the `metaclass=` keyword of the
+class statement. A glob is matched against the value as written and its short name, so
+`ABCMeta` matches `metaclass=ABCMeta` and `metaclass=abc.ABCMeta`. A class that inherits its
+metaclass from a base declares none.
+
+Each broken constraint is one violation with its own key, so an exception accepts one
+deviation of one class.
+
+```yaml
+  - id: new-classes-use-the-building-blocks
+    type: new-class-constraints
+    severity: error
+    scope: diff
+    bases: ["Notifier", "notifications.Channel"]
+    csharp:
+      require_modifiers: ["sealed"]
+      forbid_modifiers: ["partial"]
+    python:
+      forbid_metaclass: ["*"]
+    ignore:
+      - "Tests.**"
+    message: |
+      Class '{qualified_name}' {reason}. A new class in this subsystem
+      extends Notifier or Channel. Speak to the architect before you add
+      a different building block.
+```
+
+**✅ Passes** — a new class that extends an approved base, directly or through a project
+class, and obeys the block of its language:
+
+```csharp
+public sealed class SmsNotifier : Notifier { }
+public sealed class HtmlEmailNotifier : EmailNotifier { }   // EmailNotifier : Notifier
+```
+
+```python
+class SmsNotifier(Notifier): ...
+```
+
+**❌ Violates** — a new class with no approved base, or one that breaks the block of its
+language:
+
+```csharp
+public sealed class RetryPolicy { }              // extends nothing
+public class PushNotifier : Notifier { }         // not sealed
+```
+
+```python
+class PushNotifier(Notifier, metaclass=Registry): ...   # declares a metaclass
+```
+
+The C# run:
+
+```
+[new-classes-use-the-building-blocks] (error)
+  - Notifications.PushNotifier — Notifications/Push.cs:4: Class 'Notifications.PushNotifier' does not have the required modifier 'sealed'. A new class in this subsystem
+      extends Notifier or Channel. Speak to the architect before you add
+      a different building block.
+  - Notifications.RetryPolicy — Notifications/Retry.cs:4: Class 'Notifications.RetryPolicy' does not inherit from an approved base (Notifier, notifications.Channel). A new class in this subsystem
+      extends Notifier or Channel. Speak to the architect before you add
+      a different building block.
+
+Summary: 2 error(s), 0 warning(s).
+```
+
+A class of the baseline is not checked, so the rule can start on a codebase that does not
+obey it. With `scope: snapshot` the rule checks each class and needs no baseline. Then put
+the approved bases themselves in `ignore`.
 
 ---
 
@@ -1700,6 +1810,7 @@ Two things are deliberately **not** escape hatches:
 | "This is a value object" | [`@immutable`](#immutable) + [`@sealed`](#sealed) |
 | "*This function* is settled — nobody touches it" | [`@locked`](#locked) ([§4](#4--implementation-locks)) |
 | "Naming tells you the role" | [`subclass-naming`](#subclass-naming) |
+| "New code uses the building blocks we already have" | [`new-class-constraints`](#new-class-constraints) |
 | "No class becomes a god object" | [`max-class-fanout`](#max-class-fanout) |
 | "Delete the dead code" | [`dangling-classes`](#dangling-classes) |
 
