@@ -1,6 +1,7 @@
 name: Publish to PyPI
 
-# Publishes on a version tag (v0.1.0), or manually. Uses PyPI Trusted
+# Publishes on a version tag (v0.1.0), or manually. To release, run
+# `make publish`: it bumps the patch, commits, tags v<version> and pushes both. Uses PyPI Trusted
 # Publishing (OIDC) — no API token is stored in the repository. Configure the
 # publisher once at https://pypi.org/manage/project/code-constraints/settings/publishing/
 #   owner: fleskovar   repo: code-constraints

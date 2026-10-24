@@ -45,7 +45,7 @@ PORT ?= 8765
 .PHONY: help venv setup dev install-dev install install-pipx uninstall \
         frontend-deps frontend-build frontend-check frontend clean-frontend \
         frontend-embed build dist package check-dist test test-cov lint format typecheck \
-        verify test-cases test-case debug-case update-cases demo serve clean clean-venv distclean
+        verify test-cases test-case debug-case update-cases demo serve clean clean-venv distclean \n        publish version-minor version-major
 
 # ---------------------------------------------------------------------------
 # Help
@@ -161,6 +161,24 @@ check-dist: dist ## Build, then validate the artifacts with twine
 
 clean-dist:
 	rm -rf dist build *.egg-info src/*.egg-info
+
+# ---------------------------------------------------------------------------
+# Release
+# ---------------------------------------------------------------------------
+
+# A release is a pushed v* tag: .github/workflows/publish.yml tests, builds and
+# uploads it to PyPI. `publish` bumps the patch, commits, tags and pushes. If
+# version-minor / version-major set a version that has no release yet, it
+# releases that version without a bump. The script is stdlib only.
+
+publish: ## Bump the patch, commit, tag and push - GitHub Actions publishes to PyPI
+	$(BASE_PYTHON) scripts/release.py publish
+
+version-minor: ## Start the next minor version - commits, does not tag
+	$(BASE_PYTHON) scripts/release.py bump minor
+
+version-major: ## Start the next major version - commits, does not tag
+	$(BASE_PYTHON) scripts/release.py bump major
 
 # ---------------------------------------------------------------------------
 # Quality gates
