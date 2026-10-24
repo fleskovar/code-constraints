@@ -26,6 +26,11 @@ class Severity(str, Enum):
     WARNING = "warning"
     OFF = "off"
 
+    @classmethod
+    def _missing_(cls, value: object) -> Severity | None:
+        # `--fail-on none` (CLI and MCP) spells OFF as "none".
+        return cls.OFF if value == "none" else None
+
 
 @dataclass
 class Violation:

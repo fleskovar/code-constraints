@@ -138,6 +138,18 @@ def test_check_fires_on_new_class_after_init(project_dir):
     assert any("Cat" in qn for qn in qns)
 
 
+def test_fail_on_none_reports_but_passes(project_dir):
+    _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
+    _set_rules(project_dir / ".cdec", NO_NEW_CLASSES)
+    (project_dir / "src_tree" / "animals" / "cat.py").write_text(
+        "class Cat:\n    name: str = ''\n",
+        encoding="utf-8",
+    )
+    result = _run(["check", "--fail-on", "none"], cwd=project_dir)
+    assert result.exit_code == 0, result.output
+    assert "Cat" in result.output
+
+
 def test_automatic_exceptions_reference_resnapshots(project_dir):
     """`--automatic-exceptions reference` replaces `cdec reference update`."""
     _run(["init", "--lang", "python", "--source", "src_tree"], cwd=project_dir)
