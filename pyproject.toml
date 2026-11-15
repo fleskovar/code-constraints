@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "code-constraints"
-version = "0.1.0"
+version = "0.1.1"
 description = "Enforce architectural and implementation constraints on a codebase: UML models, drift checks, conformance rules, and implementation locks."
 keywords = ["architecture", "constraints", "lint", "uml", "ci", "code-review", "governance"]
 readme = "README.md"

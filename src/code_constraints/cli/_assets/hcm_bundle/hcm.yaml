@@ -1,7 +1,7 @@
 name: code-constraints
 # This bundle ships inside the code-constraints package, so its version is the
 # package version. tests/test_hcm_bundle.py compares it with pyproject.toml.
-version: 0.1.0
+version: 0.1.1
 description: >-
   Instructions for agents that work in a project gated by code-constraints
   (cdec): plan the architecture first, propose it as a UML JSON model for
