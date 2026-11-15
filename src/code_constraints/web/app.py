@@ -2483,14 +2483,31 @@ _frontend_dist = next(
     (d for d in (_here.parents[3] / "frontend" / "dist", _here.parent / "_static") if d.exists()),
     None,
 )
+# What to do when this install has no web UI. The build hook (hatch_build.py)
+# puts the UI in every package, so only a package built with
+# CDEC_SKIP_UI_BUILD=1, or a checkout with no `npm run build`, gets here.
+NO_UI_HELP = (
+    "This cdec install has no web UI: the API works, the pages do not. "
+    "To fix it, install the released package: "
+    "pip install --upgrade --force-reinstall code-constraints. "
+    "In a clone of the repository, run: cd frontend && npm install && npm run build."
+)
+
 if _frontend_dist is not None:
     app.mount("/", _NoCacheStaticFiles(directory=str(_frontend_dist), html=True), name="spa")
 else:
+    from fastapi.responses import HTMLResponse
 
-    @app.get("/")
-    def _placeholder() -> dict[str, str]:
-        return {
-            "status": "ok",
-            "message": "Frontend not built. Run `npm install && npm run build` in /frontend.",
-            "api_docs": "/api/docs",
-        }
+    @app.get("/", response_class=HTMLResponse)
+    def _placeholder() -> str:
+        return (
+            "<!doctype html><meta charset=utf-8><title>cdec: no web UI</title>"
+            "<body style='font:16px system-ui;max-width:42rem;margin:3rem auto;line-height:1.5'>"
+            "<h1>The web UI is not installed</h1>"
+            "<p>This cdec install has no web UI. The API works: see "
+            "<a href='/api/docs'>/api/docs</a>.</p>"
+            "<p>Install the released package:</p>"
+            "<pre>pip install --upgrade --force-reinstall code-constraints</pre>"
+            "<p>In a clone of the repository, build the UI:</p>"
+            "<pre>cd frontend\nnpm install\nnpm run build</pre>"
+        )

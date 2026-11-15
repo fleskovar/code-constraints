@@ -56,7 +56,8 @@ if wheel is not None:
     index = f"{STATIC}/index.html"
     if index not in names:
         fail(f"{wheel.name}: no {index} — the web UI was not built or not embedded. "
-             f"Run `npm run build` in frontend/, then `make frontend-embed`.")
+             f"The build hook (hatch_build.py) did not run, or was skipped with "
+             f"CDEC_SKIP_UI_BUILD=1.")
     else:
         html = z.read(index).decode("utf-8")
 

@@ -44,7 +44,7 @@ PORT ?= 8765
 
 .PHONY: help venv setup dev install-dev install install-pipx uninstall \
         frontend-deps frontend-build frontend-check frontend clean-frontend \
-        frontend-embed build dist package check-dist test test-cov lint format typecheck \
+        build dist package check-dist test test-cov lint format typecheck \
         verify test-cases test-case debug-case update-cases demo serve clean clean-venv distclean \n        publish version-minor version-major
 
 # ---------------------------------------------------------------------------
@@ -88,13 +88,13 @@ install-dev: venv ## Editable install with dev extras (the development version)
 	@echo ">> cdec available as: $(VENV_BIN)/cdec"
 	@echo ">> MCP server available as: $(VENV_BIN)/cdec-mcp"
 
-install: venv frontend-embed ## Install from source into the venv (non-editable)
+install: venv ## Install from source into the venv (non-editable)
 	@echo ">> installing code-constraints from source (non-editable)"
 	$(PIP) install --upgrade pip
 	$(PIP) install .
 	@echo ">> cdec available as: $(VENV_BIN)/cdec"
 
-install-pipx: frontend-embed ## Install the cdec CLI + MCP server globally from this checkout via pipx
+install-pipx: ## Install the cdec CLI + MCP server globally from this checkout via pipx
 	@command -v pipx >/dev/null 2>&1 || { echo "pipx not found — see https://pipx.pypa.io"; exit 1; }
 	pipx install --force ".[mcp]"
 	@echo ">> cdec installed globally; run: cdec --help"
@@ -120,19 +120,10 @@ frontend-check: ## Run svelte-check
 
 frontend: frontend-deps frontend-build ## Install frontend deps and build the SPA
 
-# The wheel serves the SPA from package data, so the built bundle has to sit
-# inside the package before hatchling collects it. Skipped (with a warning)
-# when the bundle is not built, so `pip install .` on a bare clone still works.
+# The wheel serves the SPA from package data at web/_static. The build hook
+# (hatch_build.py) builds the SPA and copies it there on every non-editable
+# build, so no target here has to remember to.
 EMBED := src/code_constraints/web/_static
-
-frontend-embed: ## Copy frontend/dist into the package as web/_static
-	@rm -rf $(EMBED)
-	@if [ -d "$(FRONTEND)/dist" ]; then \
-	  echo ">> embedding $(FRONTEND)/dist -> $(EMBED)"; \
-	  mkdir -p $(EMBED) && cp -r $(FRONTEND)/dist/. $(EMBED)/; \
-	else \
-	  echo "warning: $(FRONTEND)/dist not built - the wheel serves the API only"; \
-	fi
 
 clean-frontend: ## Remove frontend build output
 	rm -rf $(FRONTEND)/dist $(EMBED)
@@ -143,7 +134,7 @@ clean-frontend: ## Remove frontend build output
 
 build: dist ## Alias for `dist`
 
-dist: clean-dist frontend-build frontend-embed ## Build the wheel + sdist into dist/
+dist: clean-dist ## Build the wheel + sdist into dist/ (the build hook builds the web UI)
 	@echo ">> building distributable"
 	$(PY) -m build
 	@echo

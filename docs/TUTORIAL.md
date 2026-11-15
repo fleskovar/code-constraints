@@ -71,7 +71,9 @@ cdec --help
 ### Requirements
 
 - **Python 3.11+** — required.
-- **Node 20+** — only to build the web viewer.
+- **Node 20+** — only to install from a clone or from git. The build compiles the web
+  viewer into the package and stops with an error when npm is missing. The package from
+  PyPI already has the viewer.
 
 There is no external binary to install. Diagrams are JSON graphs the browser lays out.
 
@@ -1486,10 +1488,12 @@ Pick them by name in the viewer's diagram list.
 The console script is not on `PATH`. Use `python -m code_constraints.cli …`, or activate the
 venv (`.venv/Scripts/activate` on Windows, `.venv/bin/activate` elsewhere).
 
-**Web UI shows raw JSON instead of the app**
-`frontend/dist/` is not built. Run `make frontend-build` (or `cd frontend && npm run build`).
-A wheel built by `make dist` ships the built viewer inside the package, so an installed
-wheel serves the UI; a wheel built without that step serves the API only.
+**Web UI shows "The web UI is not installed"**
+The install has no web viewer. `cdec ui` also prints a warning when it starts. An
+installed package gets this only when it was built with `CDEC_SKIP_UI_BUILD=1`, or with
+an older cdec whose build did not include the viewer. Reinstall it:
+`pip install --upgrade --force-reinstall code-constraints`. In a clone with an editable
+install, the server serves `frontend/dist/`: run `cd frontend && npm install && npm run build`.
 
 **My latest frontend change isn't showing**
 `cdec ui` serves the *built* bundle. Re-run `npm run build`, or use `npm run dev` for

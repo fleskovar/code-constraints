@@ -27,22 +27,12 @@ runs:
         cache: npm
         cache-dependency-path: frontend/package-lock.json
 
-    # The wheel serves the web UI from package data. Without these two steps
-    # `python -m build` still succeeds, but produces an API-only wheel whose
-    # `/` returns a JSON placeholder instead of the app.
+    # The build hook (hatch_build.py) builds the web UI and embeds it in the
+    # package. This step only lets the npm cache above serve the download.
     - name: Install frontend dependencies
       run: npm ci
       shell: bash
       working-directory: frontend
-
-    - name: Build the web UI
-      run: npm run build
-      shell: bash
-      working-directory: frontend
-
-    - name: Embed the web UI in the package
-      run: make frontend-embed
-      shell: bash
 
     - name: Build wheel + sdist
       run: |

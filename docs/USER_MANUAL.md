@@ -161,50 +161,15 @@ The Rules page shows what the project demands. It has three tabs:
 
 ### 3.4 Checks
 
-The Checks page runs `cdec check` and shows the result. It has two tabs:
+The Checks page shows the report of the check. It has two lists and two tabs.
 
-- **Run cdec check**: the run, its options and its result.
-- **Accepted issues**: the list of exceptions.
+- **Check**: the model that the rules read.
+- **against**: the baseline. The rules that look for a change compare with it.
+- Tab **Report**: each rule, with its open issues.
+- Tab **Accepted issues**: the list of exceptions.
 
-The page runs the check when you open it. Select **▶ Run cdec check** to run it again.
-The run is the same as `cdec check` on the command line: the same rules, the same
-report and the same exit code. The page shows the command line, with **Copy**.
-
-The options of a run:
-
-| Option | Effect | Command line |
-|---|---|---|
-| **Fail on** | The severity that makes the exit code 1: `error`, `warning`, or `none` (report only). | `--fail-on` |
-| **Rule files** | The files of `.cdec/rules/` to run. Shows only when the rules are in more than one file. | `--rules-file` |
-| **More options**, **Check** | The model that the rules read. The default is the code of today. | none for a model |
-| **More options**, **against** | The baseline. The rules that look for a change compare with it. | `--reference`, `--base-ref` |
-| **More options**, **Bypass the locks** | A changed locked body does not fail the run. A reason is necessary. | `--bypass-locks` |
-
-The result:
-
-- The **banner** shows **Passed** or **Failed**, the exit code, and the number of errors,
-  warnings, accepted issues and rules that did not run. Select a number to show or hide
-  those issues.
-- **Since the run before** shows the issues that are no longer open and the new ones. A
-  new issue has the mark **new**. The page keeps the run before while you visit other pages.
-- **List** shows each issue with its key, element, file, line and message. Type in the
-  filter box to find an issue by key, rule, class, file or message. Use **Group by** to
-  group the issues by rule, by element or by file.
-- **Text output** shows the text that `cdec check` prints. **Download JSON** saves the
-  report of `cdec check --format json`.
-
-The buttons of an issue:
-
-| Button | Effect |
-|---|---|
-| **Diagram** | Shows the class of the issue on the Diagrams page. |
-| **Editor** | Opens the file in your editor, at the line of the issue. |
-| **Accept…** | Accepts the issue, with a reason. The page then runs the check again. |
-| The key | Copies the key. |
-
-**Show the classes on the diagram** shows every class with an open issue.
-
-You can accept an issue only in the run of the code of today against the reference.
+The default run is the code of today against the reference. This is the run of `cdec check`.
+You can accept an issue only in the default run.
 
 ### 3.5 Timeline
 
@@ -313,12 +278,10 @@ The timeline gets a **Rules** step for the new rule.
 
 ### Step 4. Read the report
 
-1. Open the **Checks** page. The page runs `cdec check`.
-2. Read the banner: **Passed** or **Failed**, and the exit code.
-3. For each issue, select **Diagram** to see the class, or **Editor** to open the file at the line.
-4. If an issue is a real fault, fix the code. Then select **▶ Run cdec check**.
-   **Since the run before** shows the issues that you fixed.
-5. If an issue is a deliberate choice, accept it with a reason (see [section 7.4](#74-accept-an-issue)).
+1. Open the **Checks** page.
+2. Read the tab **Report**. Each rule shows its open issues.
+3. If an issue is a real fault, fix the code. Then select **Check again**.
+4. If an issue is a deliberate choice, accept it with a reason (see [section 7.4](#74-accept-an-issue)).
 
 ### Step 5. Add more rules, one at a time
 
@@ -382,7 +345,7 @@ On the Project page, select **Run the check automatically**. See [section 7.9](#
 ### Step 1. Open the folder and create the project config
 
 1. Run `cdec ui` in the folder of the project. An empty folder is correct.
-2. If the folder has no code, select **Use this path below**. Choose the language. Then select **Open the folder**.
+2. If the folder has no code, choose the language in **Open a folder**. Then select **Open the folder**.
 3. On the Project page, select **Start a new design**.
 4. Select **Create the project config**.
 
@@ -409,7 +372,18 @@ the diagram.
 
 Because the code does not exist yet, the whole model is green. The diagram is now a build list.
 
-### Step 4. Turn on the rules that keep the code in the plan
+### Step 4. Check the plan
+
+You can check the plan before you write code.
+
+1. Turn on the rules of step 5 first.
+2. Open the **Checks** page.
+3. In **Check**, select the goal.
+4. Read the report. A plan that breaks a layer rule or has a package cycle shows here.
+
+The rules that read source code do not run on a model. The page lists them as "did not run".
+
+### Step 5. Turn on the rules that keep the code in the plan
 
 1. On the Project page, select **Add a rule**.
 2. Turn on these rules, in this order:
@@ -423,21 +397,11 @@ Because the code does not exist yet, the whole model is green. The diagram is no
 
 3. At each rule, select **Try it**. In a new project, the rule reports few issues.
 
-### Step 5. Check the plan
-
-You can check the plan before you write code.
-
-1. Open the **Checks** page. Select **More options**.
-2. In **Check**, select the goal.
-3. Select **▶ Run cdec check**. Read the report. A plan that breaks a layer rule or has a package cycle shows here.
-
-The rules that read source code do not run on a model. The page lists them as "did not run".
-
 ### Step 6. Build
 
 1. Write the code. Use the green classes on the diagram as the list of work.
 2. Put the constraint tags in the code (see [section 7.3](#73-put-a-constraint-on-a-class)).
-3. Open the **Checks** page. Select **▶ Run cdec check**.
+3. Select **Re-parse**, then open the **Checks** page.
 4. Open the **Timeline** page. Select **The code of today**. Green is what is still to build.
 5. After each piece of work, record a checkpoint.
 
@@ -532,8 +496,8 @@ Accept an issue only when the code is correct and the rule is too strict for thi
 The issue moves to the tab **Accepted issues**. The reason stays in `rules.yaml` for the
 next reviewer.
 
-To accept many issues, type a filter first, for example the name of a rule. Then select
-**Accept the N shown issues…**. Use this only to adopt a rule on old code.
+To accept all open issues of a rule, select **Accept all N…** on the rule. Use this only
+to adopt a rule on old code.
 
 A lock issue is different. You cannot accept it as an exception (see [section 7.7](#77-lock-an-implementation)).
 
@@ -547,8 +511,7 @@ A short list of exceptions is a sign of a healthy project.
 
 ### 7.6 Check against another model
 
-The Checks page can run the rules with other inputs. Select **More options**, choose
-the two models, then select **▶ Run cdec check**. These runs change nothing.
+The Checks page can run the rules with other inputs. These runs change nothing.
 
 | To learn | Check | against |
 |---|---|---|
@@ -560,7 +523,7 @@ the two models, then select **▶ Run cdec check**. These runs change nothing.
 
 To use a model file here, first add it on the Diagrams page with **Add a model file…**.
 
-Select **Reset** to return to the default run.
+Select **Back to the code against the reference** to return to the default run.
 
 ### 7.7 Lock an implementation
 
@@ -632,7 +595,7 @@ moves their content into `rules.yaml` and deletes them.
 | When | Do this |
 |---|---|
 | Before you code | Open the **Timeline** page. Select **The code of today**. Find the next green class. |
-| While you code | Open the **Checks** page. Select **▶ Run cdec check**. Read **Since the run before**. |
+| While you code | Select **Re-parse**. Open the **Checks** page. |
 | After a piece of work | Record a checkpoint on the **Timeline** page. |
 | When a rule blocks a good change | Decide: fix the code, change the plan, or accept the issue with a reason. |
 | In a pull request | Review the diff of `.cdec/`. Exceptions, locks and goals are the decisions to review. |
@@ -660,7 +623,7 @@ The three answers to a failed check:
 | A new rule reports many issues. | The code already breaks the rule. | Select **Try it**, then **Accept these**. Or set the severity to `warning`. |
 | The Rules page cannot change a rule. | The rules are in `.cdec/rules/`. | Change the file by hand. |
 | A rule shows "did not run". | The rule needs source code and the checked model has none. Or the rule needs a reference. | Check the code of today. Read the reason on the row. |
-| There is no **Accept…** button. | The run is not the code against the reference, or the issue is a lock. | Select **Reset** in **More options**. Accept a lock on the Rules page, tab **Locks**. |
+| There is no **Accept…** button. | The run is not the code against the reference. | Select **Back to the code against the reference**. |
 | The tag wizard does not see the tag. | The import line is missing, or the tag is not next to the class. | Make sure that the import line is in the file. Remove empty lines between the tag and the class. |
 | A lock fails after a small edit. | The body changed. A comment change does not count. A code change does. | Undo the change, or accept it for that one element. |
 | The lists have no git revision. | The folder is not in a git repository. | Use the steps of the timeline, or a model file. |
@@ -684,9 +647,9 @@ The three answers to a failed check:
 | Change or remove a rule | Rules, tab **Rules** |
 | See and add constraint tags | Rules, tab **Constraints in the code** |
 | Record or accept locks | Rules, tab **Locks** |
-| Run `cdec check`, see why it fails | Checks, **▶ Run cdec check** |
-| Check a plan, or check against a snapshot | Checks, **More options** |
-| Accept an issue | Checks, the **Accept…** button of the issue |
+| See why the check fails | Checks, tab **Report** |
+| Check a plan, or check against a snapshot | Checks, **Check** and **against** |
+| Accept an issue | Checks, tab **Report** |
 | Withdraw an accepted issue | Checks, tab **Accepted issues** |
 | See the journey of the project | Timeline |
 | Record progress | Timeline, **Record a checkpoint…** |
@@ -698,7 +661,7 @@ The [CLI reference](CLI_REFERENCE.md), section 2.6, gives the command behind eac
 ### Not in the web app
 
 - A change of the source code. `cdec` gives you the text to paste.
-- The check in CI. CI runs `cdec check` on its own machine. The Checks page runs the same check on your machine.
+- The check in CI. CI runs `cdec check`.
 - The update of `cdec` itself (`cdec update`).
 - The bypass for locks (`--bypass-locks`). Use it only in an emergency, from the command line.
 - A check with only some of the rule files (`cdec check --rules-file`).

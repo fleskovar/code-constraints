@@ -19,6 +19,12 @@ cdec --help
 This requires Python 3.11 or later. The package includes the web viewer.
 For the MCP server that coding agents use, install `pip install "code-constraints[mcp]"`.
 
+To install from a clone or from git (`pip install .`, `pipx install .`,
+`pip install git+https://github.com/fleskovar/code-constraints`), you also need Node.js 20
+or later and npm. The build compiles the web viewer and puts it in the package. Without npm,
+the build stops with an error. To build a package with no web viewer on purpose, set
+`CDEC_SKIP_UI_BUILD=1`.
+
 ## Quick start
 
 The steps below use a Python project with its code in `src/`. Run every command from the
@@ -793,6 +799,9 @@ irm https://raw.githubusercontent.com/fleskovar/code_constraints/main/install/in
 make dist
 pip install dist/code_constraints-0.1.0-py3-none-any.whl
 ```
+
+The build hook (`hatch_build.py`) builds the web viewer during `make dist`, `pip install .`
+and every other build, so each wheel has the viewer. This needs Node.js 20 or later.
 
 ## Development
 
