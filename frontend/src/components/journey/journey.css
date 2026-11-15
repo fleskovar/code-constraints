@@ -1,0 +1,123 @@
+/* Shared look of the guide, rules and history pages. Every selector starts at
+   `.jy`, the root class of those pages, so nothing here reaches the canvas. */
+.jy {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--fg);
+}
+.jy h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.15rem;
+}
+.jy h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.jy p {
+  margin: 0.25rem 0;
+}
+.jy .muted {
+  color: var(--muted);
+}
+.jy .error {
+  color: #c63a3a;
+}
+.jy .ok {
+  color: #166534;
+}
+.jy code,
+.jy pre {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
+}
+.jy code {
+  background: var(--hover);
+  padding: 0 0.3rem;
+  border-radius: 3px;
+}
+.jy pre {
+  background: var(--hover);
+  border-radius: 4px;
+  padding: 0.5rem 0.65rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+}
+.jy button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--fg);
+}
+.jy button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.jy button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+.jy button.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+.jy button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.jy input[type="text"],
+.jy textarea,
+.jy select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.jy textarea {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.jy .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+}
+.jy .row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.jy .badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  background: var(--hover);
+  white-space: nowrap;
+}
+.jy .badge.bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.jy .badge.good {
+  background: #dcfce7;
+  color: #166534;
+}
+.jy .badge.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+.jy .badge.goal {
+  background: #dbeafe;
+  color: #1e40af;
+}

@@ -265,6 +265,17 @@ def _collect(
         raise ToolError(str(exc)) from exc
 
 
+def _record_history(
+    cfg_dir: Path, kind: str, title: str, reference_path: Path, note: str, out: dict[str, Any]
+) -> None:
+    """Add the model that became the reference to the project history."""
+    from code_constraints import journal
+
+    entry = journal.record_reference(cfg_dir, kind, title, reference_path, note=note)
+    if entry is not None:
+        out["history"] = entry.id
+
+
 def _issue_json(issue: "Issue") -> dict[str, Any]:
     return {
         "key": issue.key,
@@ -545,6 +556,7 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         repo: Optional[str] = None,
         force: bool = False,
         target: Optional[list[str]] = None,
+        note: str = "",
     ) -> dict[str, Any]:
         """Record the code as it stands now as approved, instead of failing on it.
 
@@ -564,6 +576,8 @@ def build_server(project_root: Path | None = None) -> MCPServer:
                       that drifted.
           "reference" re-snapshot .cdec/reference.xmi from the current source,
                       which erases the drift the reference existed to detect.
+                      The project history records the snapshot as a checkpoint;
+                      pass `note` to say what changed and why.
 
         Order is fixed: the reference and the locks settle first, then the checks
         re-run, and only what is still reported gets grandfathered — otherwise
@@ -604,6 +618,16 @@ def build_server(project_root: Path | None = None) -> MCPServer:
             if name not in accept:
                 continue
             rules = loaded.of_type(type_name)
+            if not rules and name == "reference":
+                # The reference is also the baseline of every `scope: diff`
+                # rule, so it is re-snapshotted without a reference rule.
+                from code_constraints.lint.pipeline import snapshot_reference
+
+                ref = ctx_info.reference_path or (cfg_dir / REFERENCE_FILENAME)
+                snapshot_reference(source_path, cfg.language, ref)
+                out["recorded"][name] = [f"wrote {_rel(roots, ref)}"]
+                _record_history(cfg_dir, "checkpoint", "Reference re-snapshotted", ref, note, out)
+                continue
             if not rules:
                 out["skipped"].append(
                     {"what": name, "reason": f"no `{type_name}` rule in rules.yaml"}
@@ -617,6 +641,11 @@ def build_server(project_root: Path | None = None) -> MCPServer:
                             auto_ctx, force=force, only=only if name == "locks" else ()
                         )
                     )
+                    if name == "reference":
+                        _record_history(
+                            cfg_dir, "checkpoint", "Reference re-snapshotted",
+                            rule.reference_path(auto_ctx), note, out,  # type: ignore[attr-defined]
+                        )
                 except RuleSkipped as exc:
                     out["skipped"].append({"what": name, "reason": str(exc)})
             out["recorded"][name] = lines
@@ -1004,6 +1033,8 @@ def build_server(project_root: Path | None = None) -> MCPServer:
         model: str,
         reference: Optional[str] = None,
         config_dir: Optional[str] = None,
+        title: str = "",
+        note: str = "",
     ) -> dict[str, Any]:
         """Promote an authored model file to be the project's target architecture.
 
@@ -1014,6 +1045,10 @@ def build_server(project_root: Path | None = None) -> MCPServer:
 
         This declares what the code *should become*. To record what it *is*
         instead, use `cdec_accept(what=["reference"])`.
+
+        The project history records the model as a goal. Pass `title` (a short
+        name for the goal) and `note` (why the user chose it), so the history
+        tells the story of the decision.
         """
         model_path = roots.require_file(model, what="model file")
         cfg_dir = roots.config_dir(config_dir)
@@ -1026,12 +1061,17 @@ def build_server(project_root: Path | None = None) -> MCPServer:
 
         project = _load_model(model_path)
         _save_model(project, ref_path)
-        return {
+        out: dict[str, Any] = {
             "ok": True,
             "reference": _rel(roots, ref_path),
             "from": _rel(roots, model_path),
             "classes": _count_classes(project),
         }
+        if (cfg_dir / RULES_FILENAME).is_file():
+            _record_history(
+                cfg_dir, "goal", title or f"Goal: {model_path.stem}", ref_path, note, out
+            )
+        return out
 
     @mcp.tool()
     def cdec_propose(

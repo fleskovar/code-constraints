@@ -2,23 +2,43 @@
   import { onMount } from "svelte";
   import {
     api,
+    type JourneyStatus,
     type ProjectInfo,
     type WorkspaceView,
     type XmiInfo,
   } from "./lib/api";
+  import GuidePage, { type GuideTarget } from "./components/journey/GuidePage.svelte";
+  import RulesPage from "./components/journey/RulesPage.svelte";
+  import HistoryPage from "./components/journey/HistoryPage.svelte";
+  import WizardHost from "./components/journey/WizardHost.svelte";
+  import { closeWizard } from "./components/journey/wizards.svelte";
   import HomePage, { type HomeIntent } from "./components/HomePage.svelte";
   import DiagramViewer from "./components/DiagramViewer.svelte";
-  import DiffViewer from "./components/DiffViewer.svelte";
+  import ModelBar from "./components/ModelBar.svelte";
   import EditorPage from "./components/editor/EditorPage.svelte";
   import EditorModals from "./components/editor/EditorModals.svelte";
-  import { newBlank, setMode } from "./lib/state/editor.svelte";
+  import { editorState, newBlank, setBaseline, setMode } from "./lib/state/editor.svelte";
   import { setPendingFocus } from "./lib/state/diagram.svelte";
   import { applyWorkspaceState } from "./lib/views";
 
-  type Mode = "browse" | "diff" | "editor";
+  // One page for each part of a project: the codebase (`guide`, shown as
+  // "Project"), the diagrams (`browse`), the constraints and rules (`rules`),
+  // the check reports (`checks`) and the timeline (`history`).
+  type Mode = "guide" | "browse" | "rules" | "checks" | "history" | "editor";
 
   let project = $state<ProjectInfo | null>(null);
+  // The model of the code: the parse. The project page and the wizards read it.
   let xmi = $state<XmiInfo | null>(null);
+  // False when `xmi` came from another command (a proposal, a comparison).
+  let codeParsed = $state(false);
+  // The diagram page shows `shown`, with the diff colours of the change from
+  // `against`. Both are model references. `shownXmi` is that diagram, when it
+  // is not the plain parse of the code.
+  let shown = $state("code");
+  let against = $state("");
+  let shownXmi = $state<XmiInfo | null>(null);
+  let modelBusy = $state(false);
+  let modelError = $state("");
   let mode = $state<Mode>("browse");
   let editorOnly = $state(false);
   let error = $state("");
@@ -32,6 +52,93 @@
   // edited, the header shows the name and the pencil.
   let editingName = $state<string | null>(null);
   let renameError = $state("");
+  // What the guide knows about the project. The guide keeps it current.
+  let journey = $state<JourneyStatus | null>(null);
+  // True for the next mount of the diagram: it opens in edit mode.
+  let openInEdit = $state(false);
+
+  // Change the page. The canvas state is one module-level object, so the view
+  // of the diagram page must not filter the history or the diff, and a filter
+  // from there must not end in the saved view.
+  function go(next: Mode, edit = false) {
+    if (next === mode) return;
+    // The edit mode is module-level state too. A page that shows a diagram
+    // would open on the draft of the editor and not on its own model.
+    if (editorState.mode === "edit") {
+      if (
+        editorState.dirty &&
+        !confirm("You have unsaved edits. Leave edit mode and discard them?")
+      )
+        return;
+      setMode("view");
+      setBaseline(null);
+    }
+    if (next === "browse" || mode === "browse")
+      applyWorkspaceState(next === "browse" ? (view?.state ?? null) : null);
+    openInEdit = edit;
+    mode = next;
+  }
+
+  // Choose the models of the diagram page, and load the diagram.
+  async function selectModels(show: string, vs: string) {
+    if (!project) return;
+    shown = show;
+    against = vs;
+    modelError = "";
+    modelBusy = true;
+    try {
+      if (show === "code" && !vs) {
+        if (!codeParsed) {
+          xmi = await api.parse(project.id);
+          codeParsed = true;
+        }
+        shownXmi = null;
+      } else {
+        shownXmi = await api.showModel(project.id, show, vs);
+      }
+    } catch (e) {
+      modelError = (e as Error).message;
+    } finally {
+      modelBusy = false;
+    }
+  }
+
+  async function fromGuide(target: GuideTarget) {
+    if (target === "edit") {
+      // A plan grows from the plan: with an open goal, edit the goal. With no
+      // goal, edit a copy of the code.
+      await selectModels(journey?.goal ? "reference" : "code", "");
+      go("browse", true);
+    } else go(target === "diagram" ? "browse" : target);
+  }
+
+  // The Checks page asks for the classes of its issues on the class diagram.
+  async function onShowClasses(qualifiedNames: string[]) {
+    if (qualifiedNames.length === 0) return;
+    setPendingFocus(qualifiedNames);
+    await selectModels("code", "");
+    go("browse");
+  }
+
+  // A wizard asks for the code against the reference on the diagram page.
+  async function showOnDiagram() {
+    await selectModels("reference", "code");
+    go("browse");
+  }
+
+  // A project with no `.cdec/` opens on the guide, once. After that the path
+  // opens on its diagram, and the guide is one click away.
+  async function landOnGuideOnce(p: ProjectInfo) {
+    const seenKey = `cdec.guide-seen.${p.id}`;
+    try {
+      journey = await api.journey(p.id);
+      if (journey.configured || localStorage.getItem(seenKey)) return;
+      localStorage.setItem(seenKey, "1");
+      if (project?.id === p.id && mode === "browse") go("guide");
+    } catch {
+      // The guide is a help. The diagram works without it.
+    }
+  }
 
   function launch(intent: HomeIntent) {
     view = intent.kind === "parse" ? (intent.view ?? null) : null;
@@ -40,6 +147,13 @@
     // The canvas state is one module-level object, so without this the filter
     // of the last project stays on the next one.
     applyWorkspaceState(view?.state ?? null);
+    journey = null;
+    openInEdit = false;
+    shownXmi = null;
+    against = "";
+    modelError = "";
+    shown = intent.kind === "parse" ? "code" : "given";
+    codeParsed = intent.kind === "parse";
     if (intent.kind === "editor") {
       newBlank();
       setMode("edit");
@@ -53,18 +167,10 @@
     project = intent.project;
     editorOnly = false;
     error = "";
-    if (
-      intent.kind === "parse" ||
-      intent.kind === "quick_diff" ||
-      intent.kind === "xmi_diff"
-    ) {
-      xmi = intent.xmi;
-      mode = "browse";
-    } else {
-      // diff_custom: go to DiffViewer ref-pickers, no xmi yet
-      xmi = null;
-      mode = "diff";
-    }
+    xmi = intent.xmi;
+    // A folder opens on its project page. A named view opens on its diagram.
+    mode = intent.kind === "parse" && intent.landing === "project" ? "guide" : "browse";
+    if (intent.kind === "parse" && mode === "browse") void landOnGuideOnce(intent.project);
   }
 
   // Synthetic projects (uploaded-XMI diffs) have ids starting with `u` and a
@@ -77,7 +183,11 @@
     if (!project) return;
     try {
       xmi = await api.parse(project.id);
-      mode = "browse";
+      codeParsed = true;
+      shownXmi = null;
+      shown = "code";
+      against = "";
+      modelError = "";
     } catch (e) {
       error = (e as Error).message;
     }
@@ -104,6 +214,7 @@
   }
 
   function reset() {
+    closeWizard();
     project = null;
     xmi = null;
     view = null;
@@ -202,7 +313,7 @@
       const v = latest
         ? await api.openWorkspaceView(proj.id, latest.id)
         : await api.createWorkspaceView(proj.id);
-      launch({ kind: "parse", project: proj, xmi: x, view: v });
+      launch({ kind: "parse", project: proj, xmi: x, view: v, landing: "diagram" });
       // Clear the query so a refresh / Home doesn't re-trigger the autoload.
       history.replaceState(null, "", window.location.pathname);
     } catch (e) {
@@ -220,7 +331,7 @@
       <span class="path" title={project.path}>{project.path}
         <span class="lang">{project.lang}</span>
       </span>
-      {#if view && editingName === null}
+      {#if view && mode === "browse" && !shownXmi && editingName === null}
         <span class="view-title">
           <span
             class="view-name"
@@ -233,7 +344,7 @@
             onclick={() => (editingName = view!.name)}>✎</button
           >
         </span>
-      {:else if view}
+      {:else if view && mode === "browse" && !shownXmi}
         <!-- A form: Enter in the field and the OK button both submit it. -->
         <form
           class="view-title"
@@ -257,13 +368,44 @@
         </form>
       {/if}
       <nav>
-        <button class:active={mode === "browse"} onclick={() => (mode = "browse")}>Browse</button>
         {#if !isSynthetic}
-          <button class:active={mode === "diff"} onclick={() => (mode = "diff")}>Diff</button>
+          <button
+            class:active={mode === "guide"}
+            onclick={() => go("guide")}
+            title="The codebase, the next step, and every task">Project</button
+          >
+        {/if}
+        <button
+          class:active={mode === "browse"}
+          onclick={() => go("browse")}
+          title="The model of the code, the target, a snapshot. Show one, or compare two."
+          >Diagrams</button
+        >
+        {#if !isSynthetic}
+          <button
+            class:active={mode === "rules"}
+            onclick={() => go("rules")}
+            title="The rules of rules.yaml, the constraint tags in the code, the locks"
+            >Rules</button
+          >
+          <button
+            class:active={mode === "checks"}
+            onclick={() => go("checks")}
+            title="The report of the check: the rules on a model, against a baseline"
+            >Checks</button
+          >
+          <button
+            class:active={mode === "history"}
+            onclick={() => go("history")}
+            title="The start, the goals, the checkpoints and the rule changes, in order"
+            >Timeline</button
+          >
         {/if}
       </nav>
       {#if !isSynthetic}
-        <button class="ghost" onclick={reparse} title="Re-parse current source">Re-parse</button>
+        <button class="ghost" onclick={reparse} title="Read the source code again"
+          >Re-parse</button
+        >
       {/if}
       {#if xmi}
         <a
@@ -287,13 +429,58 @@
       <HomePage onLaunch={launch} />
     {:else if error}
       <p class="error">{error}</p>
-    {:else if mode === "browse" && xmi}
-      <DiagramViewer {xmi} bind:view />
-    {:else if mode === "diff"}
-      <DiffViewer {project} />
+    {:else if mode === "guide"}
+      <GuidePage {project} {xmi} bind:status={journey} onGo={fromGuide} />
+    {:else if mode === "rules"}
+      <RulesPage {project} {xmi} section="rules" onSetUp={() => go("guide")} onGo={go} {onShowClasses} />
+    {:else if mode === "checks"}
+      <RulesPage {project} {xmi} section="checks" onSetUp={() => go("guide")} onGo={go} {onShowClasses} />
+    {:else if mode === "history"}
+      <HistoryPage
+        {project}
+        onSetUp={() => go("guide")}
+        onShow={async (show, vs) => {
+          await selectModels(show, vs);
+          go("browse");
+        }}
+      />
+    {:else if mode === "browse"}
+      <div class="diagrams">
+        {#if !isSynthetic}
+          <ModelBar
+            {project}
+            show={shown}
+            {against}
+            busy={modelBusy}
+            error={modelError}
+            onselect={selectModels}
+          />
+        {/if}
+        <div class="canvas">
+          <!-- The workspace view belongs to the parse of the code. Another
+               model is a diagram to look at: the viewer does not save it. -->
+          {#if shownXmi}
+            <DiagramViewer xmi={shownXmi} startInEdit={openInEdit} />
+          {:else if xmi}
+            <DiagramViewer {xmi} bind:view startInEdit={openInEdit} />
+          {/if}
+        </div>
+      </div>
     {/if}
   </div>
 </div>
+
+{#if project && !isSynthetic && !editorOnly}
+  <WizardHost
+    {project}
+    {xmi}
+    onParsed={(x) => {
+      xmi = x;
+      codeParsed = true;
+    }}
+    onShow={showOnDiagram}
+  />
+{/if}
 
 <EditorModals />
 
@@ -329,12 +516,21 @@
     background: var(--surface);
     border-bottom: 1px solid var(--border);
   }
-  h1 { margin: 0; font-size: 1.1rem; }
+  h1 { margin: 0; font-size: 1.1rem; white-space: nowrap; }
+  /* The path gives way first: the page names and the actions stay on one line. */
+  header button,
+  header .export {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  nav { flex-shrink: 0; }
   .path {
     color: var(--muted);
     font-size: 0.875rem;
     font-family: ui-monospace, SFMono-Regular, monospace;
     max-width: 40rem;
+    min-width: 4rem;
+    flex-shrink: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -344,7 +540,7 @@
     align-items: center;
     gap: 0.3rem;
     margin: 0;
-    min-width: 0;
+    flex-shrink: 0;
   }
   .view-name {
     font-size: 0.875rem;
@@ -438,6 +634,10 @@
   .reset:hover, .ghost:hover, nav button:hover, .export:hover {
     background: var(--hover);
   }
+  /* The page that is open keeps its colour under the pointer. */
+  nav button.active:hover {
+    background: var(--accent);
+  }
   .export:hover {
     background: #1d4ed8;
   }
@@ -445,6 +645,15 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+  }
+  .diagrams {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .canvas {
+    flex: 1;
+    min-height: 0;
   }
   .error { color: #c63a3a; padding: 1rem; }
   .autoload { color: var(--muted); padding: 1rem; }

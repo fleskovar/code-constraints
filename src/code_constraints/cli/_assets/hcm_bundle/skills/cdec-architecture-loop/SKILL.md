@@ -25,7 +25,8 @@ cdec propose target.json --focus pkg.ClassA,pkg.ClassB
 # 4. Discuss, edit target.json, and run `cdec propose` again. Repeat.
 
 # 5. Lock the design. Do this ONLY after the reviewer approves the current model.
-cdec reference set target.json                            # writes .cdec/reference.xmi
+#    Give the goal a name and the reason. The project history records both.
+cdec reference set target.json --title "<goal>" -m "<why>"   # writes .cdec/reference.xmi
 
 # 6. The gate now compares the code with the locked design.
 cdec check

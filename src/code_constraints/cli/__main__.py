@@ -16,14 +16,14 @@ from code_constraints.core.diff import diff_projects
 from code_constraints.core.model import SUPPORTED_LANGUAGES, SourceLanguage
 from code_constraints.core.model_io import UnsupportedModelFormat, load_model, save_model
 from code_constraints.core.xmi_writer import write_project
-from code_constraints.lint.baseline import load_baseline, write_baseline
+from code_constraints.lint.baseline import write_baseline
 from code_constraints.lint.config import (
     REFERENCE_FILENAME,
+    RULES_FILENAME,
     ConfigError,
     load_project_config,
     load_rules,
 )
-from code_constraints.lint.engine import run_checks
 from code_constraints.lint.rules.base import Severity
 
 if TYPE_CHECKING:
@@ -380,6 +380,11 @@ def check(
     bypass_reason: str = typer.Option(
         "", "--bypass-reason", help="Why locks are being bypassed (recorded in the output)."
     ),
+    message: str = typer.Option(
+        "", "--message", "-m",
+        help="With `--automatic-exceptions reference`, the note for the checkpoint "
+             "that the project history records.",
+    ),
 ) -> None:
     """Check the project against every rule in `.cdec/rules.yaml`.
 
@@ -423,30 +428,30 @@ def check(
     def run(*, filtered: bool) -> "Report":
         """Parse, resolve the baseline, and run every rule. `filtered` applies
         the recorded exceptions; the grandfathering pass needs the raw set."""
+        from code_constraints.lint.pipeline import PipelineError, run_check
+
         head_proj = _parse_project(source_path, language)
-        annotated, has_diff, base_proj = _resolve_baseline_and_diff(
-            head_proj=head_proj,
-            cfg_language=language,
-            config_dir=config_dir,
-            explicit_reference=reference,
-            explicit_base_ref=base_ref,
-            repo_path=repo,
-            default_reference=cfg.reference,
-        )
-        return run_checks(
-            annotated,
-            loaded.rules,
-            has_diff=has_diff,
-            baseline=load_baseline(config_dir) if filtered else None,
-            baseline_project=base_proj,
-            source_context=ctx_info,
-            bypass_locks=bypass_locks,
-            bypass_reason=bypass_reason,
-        )
+        try:
+            return run_check(
+                head_proj,
+                loaded.rules,
+                cfg,
+                source=source_path,
+                language=language,
+                reference=reference,
+                base_ref=base_ref,
+                repo=repo,
+                filtered=filtered,
+                bypass_locks=bypass_locks,
+                bypass_reason=bypass_reason,
+            )
+        except PipelineError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
 
     if accept:
         _apply_automatic_exceptions(
-            accept, loaded, ctx_info, config_dir, run, force=force, only=only
+            accept, loaded, ctx_info, config_dir, run, force=force, only=only, note=message
         )
         return
 
@@ -505,6 +510,7 @@ def _apply_automatic_exceptions(
     *,
     force: bool,
     only: list[str],
+    note: str = "",
 ) -> None:
     """Record the current state as approved, instead of failing on it.
 
@@ -524,6 +530,11 @@ def _apply_automatic_exceptions(
         if what not in accept:
             continue
         rules = loaded.of_type(type_name)
+        if not rules and what == "reference":
+            # The reference is also the baseline of every `scope: diff` rule,
+            # so it is re-snapshotted without a `reference-architecture` rule.
+            _snapshot_project_reference(ctx_info, config_dir, note)
+            continue
         if not rules:
             typer.echo(
                 f"--automatic-exceptions {what}: no `{type_name}` rule in rules.yaml, "
@@ -545,6 +556,14 @@ def _apply_automatic_exceptions(
                 continue
             for line in lines:
                 typer.echo(line)
+            if what == "reference":
+                _record_history(
+                    config_dir,
+                    "checkpoint",
+                    "Reference re-snapshotted",
+                    rule.reference_path(_auto_accept_context(ctx_info)),  # type: ignore[attr-defined]
+                    note,
+                )
 
     if "rules" in accept:
         report = run(filtered=False)
@@ -563,6 +582,32 @@ def _apply_automatic_exceptions(
             )
             for v in refused:
                 typer.echo(f"    - [{v.key()}] {v.qualified_name}")
+
+
+def _snapshot_project_reference(
+    ctx_info: "SourceContext", config_dir: Path, note: str
+) -> None:
+    from code_constraints.lint.pipeline import snapshot_reference
+
+    path = ctx_info.reference_path or (config_dir / REFERENCE_FILENAME)
+    if ctx_info.source is None or not ctx_info.language:
+        typer.echo("--automatic-exceptions reference: no source tree resolved.")
+        return
+    project = snapshot_reference(ctx_info.source, ctx_info.language, path)
+    n_classes = sum(1 for _ in project.iter_classes())
+    typer.echo(f"wrote {path} ({n_classes} class(es) snapshotted from {ctx_info.source})")
+    _record_history(config_dir, "checkpoint", "Reference re-snapshotted", path, note)
+
+
+def _record_history(
+    config_dir: Path, kind: str, title: str, reference_path: Path, note: str
+) -> None:
+    """Add the model that became the reference to the project history."""
+    from code_constraints import journal
+
+    entry = journal.record_reference(config_dir, kind, title, reference_path, note=note)
+    if entry is not None:
+        typer.echo(f"history: recorded {entry.kind} {entry.id}")
 
 
 def _auto_accept_context(source_context: "SourceContext") -> "RuleContext":
@@ -1155,6 +1200,12 @@ def reference_set(
     config_dir: Path = typer.Option(
         Path(".cdec"), "--config", help="`.cdec/` folder used to resolve the destination."
     ),
+    title: str = typer.Option(
+        "", "--title", help="Name of this goal in the project history (default: the file name)."
+    ),
+    message: str = typer.Option(
+        "", "--message", "-m", help="Why the team chose this target. The history records it."
+    ),
 ) -> None:
     """Lock an authored model in as the target architecture.
 
@@ -1181,6 +1232,8 @@ def reference_set(
     _save_model_cli(proj, ref_path)
     n_classes = sum(1 for _ in proj.iter_classes())
     typer.echo(f"locked {model} as target architecture -> {ref_path} ({n_classes} classes)")
+    if (config_dir / RULES_FILENAME).is_file():
+        _record_history(config_dir, "goal", title or f"Goal: {model.stem}", ref_path, message)
 
 
 @reference_app.command("show")
@@ -1294,6 +1347,78 @@ def reference_update(ctx: typer.Context) -> None:
 # These two commands hand that bundle to hcm; installing it into a harness is
 # then hcm's job (`hcm install code-constraints -t <harness>`).
 # ---------------------------------------------------------------------------
+
+history_app = typer.Typer(
+    help=(
+        "The recorded journey of the architecture: where it started, each goal "
+        "the team set, and each checkpoint of the code. Stored in `.cdec/history/`; "
+        "`cdec ui` plays it."
+    ),
+    invoke_without_command=True,
+)
+app.add_typer(history_app, name="history")
+
+
+@history_app.callback()
+def history_list(
+    ctx: typer.Context,
+    config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
+) -> None:
+    """List the entries, oldest first."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from code_constraints import journal
+
+    found = journal.entries(config_dir)
+    if not found:
+        typer.echo(f"no history in {journal.history_dir(config_dir)}. `cdec init` starts one.")
+        return
+    for entry in found:
+        stats = entry.stats
+        typer.echo(
+            f"{entry.created[:10]}  {entry.kind:<10}  {entry.title}"
+            f"  ({stats.get('classes', 0)} classes, {len(entry.rules)} rules, "
+            f"{stats.get('exceptions', 0)} exceptions)"
+        )
+        if entry.distance:
+            typer.echo(f"            to the goal: {_distance_text(entry.distance)}")
+        for note_line in entry.note.splitlines():
+            typer.echo(f"            {note_line}")
+
+
+def _distance_text(d: dict[str, int]) -> str:
+    return (
+        f"{d.get('to_build', 0)} to build, {d.get('to_change', 0)} to change, "
+        f"{d.get('unplanned', 0)} unplanned"
+    )
+
+
+@history_app.command("add")
+def history_add(
+    title: str = typer.Argument(..., help="A short name for this checkpoint."),
+    message: str = typer.Option("", "--message", "-m", help="What changed, and why."),
+    config_dir: Path = typer.Option(Path(".cdec"), "--config", help="`.cdec/` folder."),
+    source: Optional[Path] = typer.Option(
+        None, "--source", help="Override the source tree from rules.yaml."
+    ),
+) -> None:
+    """Record a checkpoint: the model of the code as it is now.
+
+    A checkpoint does not change the reference model or any rule. While a goal
+    is open, the checkpoint also records how far the code is from it.
+    """
+    from code_constraints import journal
+
+    cfg = _load_config_cli(config_dir)
+    project = _parse_project(source.resolve() if source else cfg.source, cfg.language)
+    entry = journal.record(config_dir, "checkpoint", title, project, note=message)
+    if entry is None:
+        typer.echo("the history is off (`history: false` in rules.yaml); nothing recorded.")
+        return
+    typer.echo(f"history: recorded checkpoint {entry.id}")
+    if entry.distance:
+        typer.echo(f"to the goal: {_distance_text(entry.distance)}")
+
 
 hcm_app = typer.Typer(
     help=(

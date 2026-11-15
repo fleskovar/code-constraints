@@ -46,6 +46,7 @@ __all__ = [
     "RULES_DIRNAME",
     "RULES_FILENAME",
     "available_rule_files",
+    "build_rule",
     "legacy_files",
     "load_project_config",
     "load_rules",
@@ -302,6 +303,13 @@ def _validate_folder_document(path: Path, raw: dict[str, Any]) -> None:
             f"{', '.join(extra)}. Settings, exceptions and locks stay in "
             f"{RULES_FILENAME}."
         )
+
+
+def build_rule(entry: Any, taken_ids: set[str] | None = None) -> Rule | None:
+    """One rule from a draft entry that is not in a file yet. Raises
+    `ConfigError` for an entry that `load_rules` would refuse. Returns None for
+    an entry with `severity: off`."""
+    return _build_rule(Path("draft"), 0, entry, set(taken_ids or ()))
 
 
 def _build_rule(

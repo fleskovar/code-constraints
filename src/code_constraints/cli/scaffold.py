@@ -106,13 +106,25 @@ def _asset(rel: str) -> Path:
 # ---------- .cdec/ scaffolding ----------
 
 def init_cdec_config(
-    config_dir: Path, lang: str, source: Path, force: bool
+    config_dir: Path,
+    lang: str,
+    source: Path,
+    force: bool,
+    *,
+    parse_from: Path | None = None,
+    journey: str | None = None,
 ) -> list[Path]:
     """Scaffold a `.cdec/` folder and snapshot a reference model from `source`.
 
     One `rules.yaml` carries the settings and the rules; the exceptions granted
     and the lock ledger are appended to its tool-managed tail as they are
     earned. Returns the files written.
+
+    `source` is the text that goes into `rules.yaml`. `parse_from` is where the
+    tree is on this machine, for a caller whose working directory is not the
+    project root. The snapshot is also the first entry of the project history
+    (`.cdec/history/`). `journey` is `greenfield` or `brownfield`; without it,
+    a tree with no classes starts a greenfield journey.
 
     Raises ScaffoldError on an unsupported language, or if a target file exists
     and `force` is False.
@@ -154,12 +166,29 @@ def init_cdec_config(
     # rule needs, and "where does reference.xmi come from" is the first question
     # anybody asks — so scaffolding answers it rather than deferring it.
     reference_path = config_dir / REFERENCE_FILENAME
-    if source.exists():
+    tree = parse_from or source
+    if tree.exists():
+        from code_constraints import journal
         from code_constraints.core.xmi_writer import write_project
 
-        project = _parse_project(source, lang)
+        project = _parse_project(tree, lang)
         write_project(project, reference_path)
         written.append(reference_path)
+        if journey is None:
+            journey = "brownfield" if any(project.iter_classes()) else "greenfield"
+        # `--force` on a project with a history scaffolds again. It does not
+        # start a second journey.
+        entry = None if journal.entries(config_dir) else journal.record(
+            config_dir,
+            "start",
+            "Start of the journey",
+            project,
+            note="The architecture when code-constraints was set up.",
+            journey=journey,
+            reference=True,
+        )
+        if entry is not None:
+            written.append(journal.history_dir(config_dir) / f"{entry.id}.yaml")
 
     return written
 
@@ -401,6 +430,11 @@ source: {source}    # the source tree `cdec check` parses
 # re-snapshot with `cdec check --automatic-exceptions reference`.
 reference: .cdec/reference.xmi
 
+# `.cdec/history/` records the reference model each time it changes, with the
+# reason: the start, each goal, each checkpoint. `cdec history` lists the
+# entries and `cdec ui` plays them. Uncomment the next line to turn it off.
+# history: false
+
 output:
   json: null       # optional default for --json-out
   log: null        # optional default for --log-out
@@ -518,6 +552,7 @@ Two files, and one command that reads them.
 | `rules.yaml` | Settings, the rules enforced, the exceptions granted, and the digests of frozen implementations. Commit it. |
 | `rules/` | The other way to hold the rules: one or more `*.yaml` files, each with a `rules:` list and nothing else. Use this **or** the `rules:` list in `rules.yaml`, never both. Commit them. |
 | `reference.xmi` | A snapshot of the architecture, used as the baseline for `scope: diff` rules and by the `reference-architecture` rule. Commit it. |
+| `history/` | The recorded journey: one model and one note for the start, for each goal, and for each checkpoint. Written by the tool. Commit it. |
 | `cache/` | Transient parse artefacts. Gitignored. |
 
 ```

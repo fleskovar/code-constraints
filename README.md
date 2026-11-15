@@ -25,6 +25,75 @@ The steps below use a Python project with its code in `src/`. Run every command 
 root of the repository. For other languages, change `--lang` and see the
 [per-language guides](docs/languages/README.md).
 
+### Start with the viewer
+
+Start the viewer in the folder of your project:
+
+```bash
+cdec ui
+```
+
+The browser opens on the home page. Select **Open this folder**, or choose another folder
+with **Browse…**. The viewer detects the language. You do not need another command: every
+task has a page or a wizard. Read the [user manual](docs/USER_MANUAL.md) for each step.
+
+A project has five pages:
+
+| Page | What it holds |
+|---|---|
+| **Project** | The codebase, the next step of the journey, and one card for each task. |
+| **Diagrams** | The class diagrams: the code, the target, each snapshot. Show one, compare two, or edit one. |
+| **Rules** | The rules of `rules.yaml`, the constraint tags in the code, and the locks. |
+| **Checks** | The report of the check: the rules on a model, against a baseline. |
+| **Timeline** | The start, each goal, each checkpoint and each rule change, in order. |
+
+A folder with no `.cdec/` folder opens on the **Project** page. Choose a journey there:
+
+- **Start a new design** (greenfield). The folder has little or no code. You draw the
+  target model first, set it as the goal, and turn on the rules that keep the code in the
+  plan.
+- **Adopt an existing codebase** (brownfield). The code exists. You record it as it is,
+  then turn rules on one at a time.
+
+A page names a model in one of five ways: the code of today, the target (the reference
+model), a step of the timeline, a git revision, or a model file (`.xmi` or `.json`). The
+**Diagrams** page shows one model, or the change between two. The **Checks** page runs the
+rules on one model against another.
+
+Each task of the CLI has a place in the viewer:
+
+| Task | Where | The command it runs |
+|---|---|---|
+| Open a project | Home: **This folder**, **Open a folder** (with **Browse…**), **Recent folders** | `cdec ui parse PATH` |
+| Open a model file, or compare two model files | Home: **Open a model file** | `cdec diff-xmi` |
+| Set up a project | **Project** | `cdec init` |
+| Fold the files of an older cdec into `rules.yaml` | **Project** | `cdec init --migrate` |
+| Add a rule | **Add a rule** wizard: choose, fill in a form, try it on the code of today, turn it on | an edit of `rules:`, then `cdec exceptions allow` for the issues that you accept |
+| Change or remove a rule, change a severity | **Rules** | an edit of `rules:` |
+| See the constraint tags of the code | **Rules**, **Constraints in the code** | none: the tags are in the model |
+| Put a constraint tag on a class or a method | **Put a constraint on a class** wizard | none: it gives the line to paste, then parses the code again to confirm the tag |
+| Copy the shim file | the tag wizard | `cdec update-assets --no-agents` |
+| Record new locks, accept a change to locked code | **Rules**, **Locks** | `cdec check -A locks`, `cdec check -A locks --force --target …` |
+| Run the check, see why it fails | **Checks**, **▶ Run cdec check** | `cdec check`, `--fail-on`, `--rules-file`, `--bypass-locks` |
+| Check the code against a snapshot or a git revision | **Checks**, **More options**, **against** | `cdec check --reference FILE`, `cdec check --base-ref REV` |
+| Check a target model or a snapshot with the rules | **Checks**, **More options**, **Check** | none: only the viewer does this |
+| Accept one issue, or all open issues | **Checks** | `cdec exceptions allow`, `cdec check -A rules` |
+| Withdraw an accepted issue, remove the stale ones | **Checks**, **Accepted issues** | `cdec exceptions remove`, `cdec exceptions prune` |
+| Plan a change | **Diagrams**, **Edit**, **Set as goal…** | `cdec reference set` |
+| Show a model, or compare two models | **Diagrams**, **Show** and **compared with** | `cdec diff`, `cdec diff-vs-xmi`, `cdec diff-xmi`, `cdec reference show` |
+| See the code against the goal | **Timeline**, **The code of today** | `cdec reference show` |
+| See the rules that were on at each step | **Timeline** | `cdec history` |
+| Record progress | **Timeline**, **Record a checkpoint…** | `cdec history add` |
+| Accept the code as the reference | **Accept the code as the reference** wizard | `cdec check -A reference` |
+| Run the check in CI, set up a coding agent | **Run the check automatically** wizard | writes `cdec-ci.sh` / `cdec-ci.bat`; shows the CI, pre-commit, hcm and MCP texts |
+
+A wizard writes nothing before its last step. The **Add a rule** wizard shows what the rule
+reports before it turns the rule on, and can accept those issues in the same step. `cdec`
+does not change source code: the tag wizard gives the exact line for your language and
+opens the file.
+
+The steps below do the same work from the command line.
+
 ### 1. Look at the class diagram
 
 ```bash
@@ -151,7 +220,8 @@ rules:
 
 Run `cdec check` again after each change. On an existing codebase, run
 `cdec check --automatic-exceptions rules` once to accept the current violations. After
-that, only new violations fail. The [rules catalogue](docs/RULES_CATALOGUE.md) lists every
+that, only new violations fail. The **Rules** page of the viewer does this for one rule at
+a time: it shows what a rule reports before you turn it on. The [rules catalogue](docs/RULES_CATALOGUE.md) lists every
 rule type, with its options and a passing and a failing example.
 
 ### 6. Add rules in the code with the shims
@@ -383,6 +453,31 @@ always gives the same key. An agent can run `cdec check --format json`, decide, 
 Other subcommands: `review`, `remove`, `list`, `prune`. See
 [Accepting known violations](docs/CLI_REFERENCE.md#24-accepting-known-violations-cdec-exceptions).
 
+## The project history
+
+`cdec` records the journey of the architecture in `.cdec/history/`. Commit the folder. Each
+entry is a model file (`.xmi`) and a note file (`.yaml`) with the title, the reason, the
+author, the commit, and the rules in force.
+
+| Entry | Meaning | Written by |
+|---|---|---|
+| `start` | The architecture when the journey began. | `cdec init` |
+| `goal` | A target model that the team agreed on. | `cdec reference set`, **Set as goal** in the viewer |
+| `checkpoint` | The code at one moment. | `cdec history add`, `cdec check --automatic-exceptions reference` |
+
+```bash
+cdec reference set target.json --title "Split billing from orders" -m "Orders must not know tax rules."
+# …work…
+cdec history add "Receipt moved to billing" -m "Tax rules are next."
+cdec history                                   # list the entries
+```
+
+While a goal is open, each checkpoint records the distance to it: the classes to build, the
+classes to change, and the classes that are not in the plan. The **Timeline** page of the
+viewer shows each entry on the diagram and plays the entries in order. A rule that the
+viewer turns on, changes or removes is an entry too. To turn the history
+off, set `history: false` in `.cdec/rules.yaml`.
+
 ## Agent skills (hcm bundle)
 
 `cdec` ships a bundle for [hcm](https://github.com/fleskovar/harness_config_manager), the
@@ -484,8 +579,9 @@ CLI prints, so an agent and a person can share one workflow.
 
 ## Interactive viewer
 
-`cdec ui parse [PATH]` opens the class diagram of a codebase. `cdec ui` starts the
-viewer at http://127.0.0.1:8765 without a project and opens it in the browser. Add
+`cdec ui` starts the viewer at http://127.0.0.1:8765 and opens it in the browser. The home
+page offers the folder that the command ran in, the recent folders, a folder browser and
+a model file. `cdec ui parse [PATH]` opens the class diagram of a codebase directly. Add
 `--no-browser` to start the viewer only.
 
 The viewer keeps your work in a `.cdec_cache/` folder. It creates the folder in the
@@ -665,6 +761,7 @@ because two of those files have the same names as files of the bundle.
 | Document | What it is |
 | --- | --- |
 | **[Tutorial](docs/TUTORIAL.md)** | **Start here.** From the first parse to a gated CI pipeline, with runnable examples against the bundled demos. |
+| **[User manual](docs/USER_MANUAL.md)** | How to use the web app, step by step, for a greenfield project and for a brownfield project. |
 | **[Rules & constraints catalogue](docs/RULES_CATALOGUE.md)** | Every rule type and every source tag, with options, a sample configuration, and a passing and a failing example. |
 | [CLI reference](docs/CLI_REFERENCE.md) | Every command and option, the `.cdec/` files, exit codes and CI/CD recipes. |
 | [MCP server](docs/MCP.md) | Install, per-harness configuration and the tool list. |

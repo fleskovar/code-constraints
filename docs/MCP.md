@@ -140,7 +140,7 @@ stdout (stdout is the protocol stream).
 | Tool | What it does |
 | --- | --- |
 | `cdec_check` | Runs **every** rule in `.cdec/rules.yaml` and returns one verdict. Model rules, `tag-conformance`, `implementation-locks` and `reference-architecture` alike. There is no second gate to call. |
-| `cdec_accept` | Records the current state as approved instead of failing on it: `what=["rules"]` grandfathers today's violations, `["locks"]` records new lock digests, `["reference"]` re-snapshots the reference model. `target` narrows `["locks"]` to the named elements. |
+| `cdec_accept` | Records the current state as approved instead of failing on it: `what=["rules"]` grandfathers today's violations, `["locks"]` records new lock digests, `["reference"]` re-snapshots the reference model and records a checkpoint in the project history (`note` is the reason). `target` narrows `["locks"]` to the named elements. |
 | `cdec_locks` | Read-only: what is lockable, what is tagged, what is baselined, what is stale. |
 
 Each violation carries a key whose prefix names the engine that produced it — `V-` a model
@@ -163,7 +163,7 @@ rule, `F-` `tag-conformance`, `L-` `implementation-locks`, `R-` `reference-archi
 | `cdec_parse` | Parse a source tree into a model file (`.xmi` or `.json`). |
 | `cdec_convert` | Convert a model between XMI 2.1 and editor JSON. |
 | `cdec_propose` | Push a proposed architecture to the web viewer, diffed against the code. Starts the viewer if needed. |
-| `cdec_reference_set` | Promote an authored model to be the target architecture — what the code *should become*. |
+| `cdec_reference_set` | Promote an authored model to be the target architecture — what the code *should become*. The project history records it as a goal: pass `title` and `note`. |
 
 ## Operations that need the user's say-so
 

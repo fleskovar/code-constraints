@@ -441,7 +441,416 @@ async function voidFetch(url: string, init?: RequestInit): Promise<void> {
   }
 }
 
+// ---------- the journey: set up, rules, history ----------
+
+/** The options of one `cdec check` run. `subject` and `baseline` are model
+ *  references; the code against the reference is the run of the CLI. */
+export interface CheckOptions {
+  subject: string;
+  baseline: string;
+  fail_on: "error" | "warning" | "none";
+  rules_files: string[];
+  bypass_locks: boolean;
+  bypass_reason: string;
+}
+
+/** One violation, as `cdec check --format json` prints it. */
+export interface CheckViolation {
+  key: string;
+  rule_id: string;
+  engine: string;
+  severity: "error" | "warning";
+  qualified_name: string;
+  message: string;
+  waivable: boolean;
+  rule?: string;
+  signature?: string;
+  location?: { file: string; start_line: number; end_line: number };
+}
+
+/** The JSON report of `cdec check`. */
+export interface CheckReport {
+  violations: CheckViolation[];
+  suppressed: CheckViolation[];
+  bypassed: CheckViolation[];
+  skipped: { rule_id: string; reason: string }[];
+  summary: {
+    errors: number;
+    warnings: number;
+    suppressed: number;
+    skipped: number;
+    bypassed: boolean;
+    bypass_reason: string;
+  };
+}
+
+export interface CheckResult {
+  passed: boolean;
+  exit_code: 0 | 1;
+  fail_on: CheckOptions["fail_on"];
+  report: CheckReport;
+  /** The text that `cdec check` prints. */
+  human: string;
+  /** The command line of the run. Empty when the CLI has no such run. */
+  command: string;
+  cwd: string;
+  /** True when an issue of this run can be accepted. */
+  acceptable: boolean;
+  rules: { id: string; type: string; severity: string }[];
+  rule_files: string[];
+  duration_ms: number;
+  finished: string;
+}
+
+/** The folder that `cdec ui` ran in: the first choice of the home page. */
+export interface StartInfo {
+  cwd: string;
+  /** The source folder to open. */
+  path: string;
+  lang: Lang | null;
+  /** True when the folder has a `.cdec/rules.yaml`. */
+  configured: boolean;
+}
+
+export interface FolderListing {
+  path: string;
+  parent: string | null;
+  /** The drives, and the home folder. */
+  roots: string[];
+  folders: { name: string; path: string; project: boolean }[];
+}
+
+/** A model that a page can show, check or compare. `ref` names it:
+ *  `code`, `reference`, `history:<id>`, `git:<ref>` or `upload:<token>`. */
+export interface ModelChoice {
+  ref: string;
+  label: string;
+  kind: "code" | "reference" | "history" | "file" | "git";
+}
+
+/** One recorded decision in `.cdec/history/`. `start` is where the journey
+ *  began, `goal` is a target model, `checkpoint` is the code at one moment,
+ *  `rules` is a rule that the web app changed. */
+export interface HistoryEntry {
+  id: string;
+  kind: "start" | "goal" | "checkpoint" | "rules";
+  title: string;
+  note: string;
+  /** ISO time, UTC. */
+  created: string;
+  author: string;
+  commit: string;
+  /** True when this model became `.cdec/reference.xmi`. */
+  reference: boolean;
+  /** classes, packages, exceptions, locks. */
+  stats: Record<string, number>;
+  rules: { id: string; type: string; severity: string }[];
+  /** A checkpoint that was recorded while a goal was open: the id of the goal. */
+  goal: string;
+  /** to_build, to_change, unplanned: class-level differences from the goal. */
+  distance: Record<string, number>;
+}
+
+export type Journey = "greenfield" | "brownfield";
+
+/** What the guide reads to find the next step. */
+export interface JourneyStatus {
+  configured: boolean;
+  config_dir: string;
+  language: string | null;
+  source: string | null;
+  journey: Journey | "";
+  reference: boolean;
+  /** Rules that are on. */
+  rules: number;
+  /** False when the rules are in `.cdec/rules/`: the tool does not write there. */
+  rules_editable: boolean;
+  exceptions: number;
+  locks: number;
+  history: number;
+  goals: number;
+  checkpoints: number;
+  /** The goal that is open now. */
+  goal: HistoryEntry | null;
+  /** The types of the rules that are on, for example `tag-conformance`. */
+  rule_types: string[];
+  /** The shim file of the language ("" when the language has no tags). */
+  shim: string;
+  shim_present: boolean;
+  /** Old per-concern files that the migration folds into rules.yaml. */
+  legacy: string[];
+  error: string;
+}
+
+/** A rule entry of rules.yaml: `id`, `type`, `severity`, and the options. */
+export type RuleEntry = Record<string, unknown>;
+
+/** A rule on its way to the server: the mapping of the form, or YAML text. */
+export type RuleDraft = { entry: RuleEntry } | { yaml: string };
+
+/** An accepted issue in the `exceptions:` list. */
+export interface AcceptedIssue {
+  key: string;
+  rule: string;
+  qualified_name: string;
+  detail: string;
+  reason: string;
+  added: string;
+  added_by: string;
+  /** The rule ran and did not report the issue: the exception covers nothing. */
+  stale: boolean;
+}
+
+export interface LockRow {
+  target: string;
+  kind: string;
+  file: string;
+  line: number;
+  reason: string;
+  /** `ok`, `new` (a tag with no digest yet), or what is wrong: `changed`,
+   *  `missing`, `removed`, `unlocked`, `algo-mismatch`. */
+  state: string;
+  message: string;
+  locked_at: string;
+  locked_by: string;
+}
+
+export interface LocksOverview {
+  /** The id of the `implementation-locks` rule, or "" when none is on. */
+  rule: string;
+  supported: boolean;
+  reason?: string;
+  targets: LockRow[];
+}
+
+export interface TagSpec {
+  id: string;
+  summary: string;
+  targets: string[];
+  params: string[];
+  /** The rule type that makes the tag binding. */
+  enforced_by: string;
+}
+
+export interface RuleStarter {
+  type: string;
+  group: string;
+  title: string;
+  summary: string;
+  /** The rule compares the code with `.cdec/reference.xmi`. */
+  needs_reference: boolean;
+  yaml: string;
+  entry: RuleEntry;
+}
+
+export interface RuleGallery {
+  groups: { id: string; title: string; summary: string }[];
+  starters: RuleStarter[];
+}
+
+/** One issue of `cdec check`. `key` is the key that the CLI prints. */
+export interface Issue {
+  key: string;
+  rule_id: string;
+  qualified_name: string;
+  message: string;
+  severity: string;
+  file: string;
+  line: number;
+  /** False for a lock violation: it cannot become an exception. */
+  waivable: boolean;
+  /** True when an exception covers the issue. */
+  waived: boolean;
+  waiver_reason: string;
+}
+
+export interface RuleRow {
+  id: string;
+  type: string;
+  severity: "error" | "warning" | "off";
+  open: number;
+  accepted: number;
+  /** Why the rule did not run, or "". */
+  skipped: string;
+  yaml: string;
+  entry: RuleEntry;
+}
+
+export interface RulesOverview {
+  rules_file: string;
+  editable: boolean;
+  /** True for the code against the reference: the run that `cdec check` does,
+   *  and the one whose issues can be accepted. */
+  default_inputs: boolean;
+  rules: RuleRow[];
+  issues: Issue[];
+  exceptions: AcceptedIssue[];
+}
+
+export interface RulePreview {
+  open: number;
+  accepted: number;
+  skipped: string;
+  issues: Issue[];
+}
+
+function postJson<T>(url: string, body: unknown, method = "POST"): Promise<T> {
+  return jsonFetch(url, {
+    method,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export const api = {
+  journey(projectId: string): Promise<JourneyStatus> {
+    return jsonFetch(`/api/projects/${projectId}/journey`);
+  },
+  /** `cdec init` for the open project. */
+  journeyInit(projectId: string, journey: Journey): Promise<JourneyStatus> {
+    return postJson(`/api/projects/${projectId}/journey/init`, { journey });
+  },
+  ruleGallery(): Promise<RuleGallery> {
+    return jsonFetch("/api/rule-starters");
+  },
+  /** Run the check and group the issues by rule. `subject` is the model
+   *  that the rules read, `baseline` the model that the diff rules compare
+   *  with. Both are model references. */
+  rules(projectId: string, subject = "code", baseline = "reference"): Promise<RulesOverview> {
+    const q = new URLSearchParams({ subject, baseline });
+    return jsonFetch(`/api/projects/${projectId}/rules?${q}`);
+  },
+  start(): Promise<StartInfo> {
+    return jsonFetch("/api/start");
+  },
+  folders(path = ""): Promise<FolderListing> {
+    return jsonFetch(`/api/fs?path=${encodeURIComponent(path)}`);
+  },
+  models(projectId: string): Promise<ModelChoice[]> {
+    return jsonFetch(`/api/projects/${projectId}/models`);
+  },
+  /** One model as a diagram, with the diff colours of the change from
+   *  `against` when that is given. */
+  showModel(projectId: string, show: string, against = ""): Promise<XmiInfo> {
+    return postJson(`/api/projects/${projectId}/models/show`, { show, against });
+  },
+  /** Add a model file (.xmi or .json) to the models of the project. */
+  uploadModel(projectId: string, file: File): Promise<ModelChoice> {
+    const fd = new FormData();
+    fd.append("model", file);
+    return jsonFetch(`/api/projects/${projectId}/models/upload`, { method: "POST", body: fd });
+  },
+  /** Open one model file with no project behind it. */
+  openModelFile(file: File): Promise<XmiInfo> {
+    const fd = new FormData();
+    fd.append("model", file);
+    return jsonFetch("/api/models/open", { method: "POST", body: fd });
+  },
+  /** Run one draft rule against the code of today. Writes nothing. */
+  previewRule(projectId: string, draft: RuleDraft, replaces = ""): Promise<RulePreview> {
+    return postJson(`/api/projects/${projectId}/rules/preview`, { ...draft, replaces });
+  },
+  addRule(
+    projectId: string,
+    draft: RuleDraft,
+    acceptExisting: boolean,
+  ): Promise<{ id: string; accepted: number }> {
+    return postJson(`/api/projects/${projectId}/rules`, {
+      ...draft,
+      accept_existing: acceptExisting,
+    });
+  },
+  /** A rule entry in both forms: the mapping and the YAML text. */
+  ruleEntry(draft: RuleDraft): Promise<{ entry: RuleEntry; yaml: string }> {
+    return postJson("/api/rule-entry", draft);
+  },
+  replaceRule(projectId: string, ruleId: string, draft: RuleDraft): Promise<void> {
+    return voidFetch(`/api/projects/${projectId}/rules/${encodeURIComponent(ruleId)}/entry`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+  },
+  removeRule(projectId: string, ruleId: string): Promise<void> {
+    return voidFetch(`/api/projects/${projectId}/rules/${encodeURIComponent(ruleId)}`, {
+      method: "DELETE",
+    });
+  },
+  /** Withdraw exceptions: the issues fail the check again. */
+  removeExceptions(projectId: string, keys: string[]): Promise<{ removed: number }> {
+    return postJson(`/api/projects/${projectId}/exceptions`, { keys }, "DELETE");
+  },
+  /** Drop the exceptions whose issue does not occur any more. */
+  pruneExceptions(projectId: string): Promise<{ removed: number }> {
+    return postJson(`/api/projects/${projectId}/exceptions/prune`, {});
+  },
+  /** The code of today against the reference. Green: the code must still
+   *  build it. Red: it is in the code and not in the reference. */
+  referenceCompare(projectId: string): Promise<XmiInfo> {
+    return postJson(`/api/projects/${projectId}/reference/compare`, {});
+  },
+  /** The code as it is becomes the reference. An open goal closes. */
+  referenceSnapshot(
+    projectId: string,
+    title: string,
+    note: string,
+  ): Promise<{ path: string; classes: number; history: string }> {
+    return postJson(`/api/projects/${projectId}/reference/snapshot`, { title, note });
+  },
+  locks(projectId: string): Promise<LocksOverview> {
+    return jsonFetch(`/api/projects/${projectId}/locks`);
+  },
+  /** Without `force`: record the digests of new locks. With `force`: accept
+   *  the change of the named elements. */
+  updateLocks(projectId: string, force: boolean, targets: string[]): Promise<{ lines: string[] }> {
+    return postJson(`/api/projects/${projectId}/locks`, { force, targets });
+  },
+  tags(lang: string): Promise<{ supported: boolean; tags: TagSpec[] }> {
+    return jsonFetch(`/api/tags?lang=${encodeURIComponent(lang)}`);
+  },
+  /** How to write one tag in one language, with the import that it needs. */
+  tagSnippet(
+    lang: string,
+    tag: string,
+    values: Record<string, string>,
+  ): Promise<{ tag: string; import: string }> {
+    return postJson("/api/tags/snippet", { lang, tag, values });
+  },
+  copyShims(projectId: string): Promise<{ written: string[] }> {
+    return postJson(`/api/projects/${projectId}/shims`, {});
+  },
+  writeCiScripts(projectId: string): Promise<{ written: string[] }> {
+    return postJson(`/api/projects/${projectId}/ci-scripts`, {});
+  },
+  /** Fold the old config.yaml / baseline.yaml / locks.yaml into rules.yaml. */
+  migrate(projectId: string): Promise<JourneyStatus> {
+    return postJson(`/api/projects/${projectId}/journey/migrate`, {});
+  },
+  setRuleSeverity(projectId: string, ruleId: string, severity: string): Promise<void> {
+    return voidFetch(`/api/projects/${projectId}/rules/${encodeURIComponent(ruleId)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ severity }),
+    });
+  },
+  acceptIssues(
+    projectId: string,
+    keys: string[],
+    reason: string,
+  ): Promise<{ allowed: number; refused: { key: string; reason: string }[]; unknown: string[] }> {
+    return postJson(`/api/projects/${projectId}/exceptions`, { keys, reason });
+  },
+  history(projectId: string): Promise<HistoryEntry[]> {
+    return jsonFetch(`/api/projects/${projectId}/history`);
+  },
+  recordCheckpoint(projectId: string, title: string, note: string): Promise<HistoryEntry> {
+    return postJson(`/api/projects/${projectId}/history`, { title, note });
+  },
+  /** The model of one history entry as a diagram, with the diff colours of the
+   *  change from `against` when that is given. */
+  historyFrame(projectId: string, entry: string, against: string): Promise<XmiInfo> {
+    return postJson(`/api/projects/${projectId}/history/frame`, { entry, against });
+  },
   registerProject(path: string, lang: Lang): Promise<ProjectInfo> {
     return jsonFetch("/api/projects", {
       method: "POST",
@@ -597,8 +1006,15 @@ export const api = {
     }
     return res.json() as Promise<ClassGraph>;
   },
-  async setReference(projectId: string, xmi: Blob): Promise<{ path: string }> {
-    const res = await fetch(`/api/projects/${projectId}/reference`, {
+  /** Overwrite `.cdec/reference.xmi`. The project history records the model
+   *  as a goal (a target) or as a checkpoint (the code as it is). */
+  async setReference(
+    projectId: string,
+    xmi: Blob,
+    record: { kind: "goal" | "checkpoint"; title: string; note: string },
+  ): Promise<{ path: string }> {
+    const query = new URLSearchParams(record).toString();
+    const res = await fetch(`/api/projects/${projectId}/reference?${query}`, {
       method: "PUT",
       headers: { "content-type": "application/xml" },
       body: xmi,
@@ -610,10 +1026,20 @@ export const api = {
   },
   /** Show the source file of a class in the file manager of the desktop, or
    *  open it in an editor. The server does this on the machine it runs on. */
-  nodeDesktopAction(xmiId: string, nodeId: string, action: "reveal" | "open"): Promise<void> {
-    return voidFetch(`/api/xmi/${xmiId}/nodes/${encodeURIComponent(nodeId)}/${action}`, {
+  nodeDesktopAction(
+    xmiId: string,
+    nodeId: string,
+    action: "reveal" | "open",
+    line = 0,
+  ): Promise<void> {
+    const at = line > 0 ? `?line=${line}` : "";
+    return voidFetch(`/api/xmi/${xmiId}/nodes/${encodeURIComponent(nodeId)}/${action}${at}`, {
       method: "POST",
     });
+  },
+  /** `cdec check`: the same report and exit code as the CLI. Writes nothing. */
+  runCheck(projectId: string, options: CheckOptions): Promise<CheckResult> {
+    return postJson(`/api/projects/${projectId}/check`, options);
   },
   /** Suggest the language of a source tree. `lang` is null when the path is
    *  not a directory or holds no known language. */

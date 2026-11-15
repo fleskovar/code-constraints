@@ -33,13 +33,15 @@ configuration, and a passing *and* failing example — see the
    - [Accepting known violations](#24-accepting-known-violations-cdec-exceptions) — the review loop
    - [The reference model](#25-the-reference-model-cdec-reference)
    - [Web viewer & the design loop](#26-web-viewer)
+   - [The project history](#27-the-project-history-cdec-history)
 3. [`.cdec/rules.yaml`](#3-cdecrulesyaml)
    - [Settings](#31-settings)
    - [`rules:`](#32-rules)
    - [`exceptions:`](#33-exceptions)
    - [`locks:`](#34-locks)
    - [`reference.xmi`](#35-referencexmi)
-   - [`.gitignore` & `cache/`](#36-gitignore--cache)
+   - [`history/`](#36-history)
+   - [`.gitignore` & `cache/`](#37-gitignore--cache)
 4. [Architectural-rule tags](#4-architectural-rule-tags) — *full detail: [catalogue §2](RULES_CATALOGUE.md#2--source-level-constraint-tags)*
 5. [Lint-rule catalogue (`rules.yaml` types)](#5-lint-rule-catalogue-rulesyaml-types) — *full detail: [catalogue §1](RULES_CATALOGUE.md#1--configured-rules-cdecrulesyaml)*
    - [Complete sample `rules.yaml`](#complete-sample-rulesyaml)
@@ -632,8 +634,11 @@ Promote an **authored** model file (hand-written or agent-written, `.json` or `.
 the project's reference. This is the "accept the proposal" step of the design loop.
 
 ```
-cdec reference set MODEL [--reference MODEL] [--config .cdec]
+cdec reference set MODEL [--reference MODEL] [--config .cdec] [--title TEXT] [-m TEXT]
 ```
+
+The project history records the model as a goal. `--title` is the name of the goal
+(default: the file name). `-m` / `--message` is the reason for it.
 
 After it runs, `cdec check` immediately starts constraining development against the target
 architecture. Because the target usually contains classes that do not exist yet,
@@ -659,10 +664,13 @@ cdec reference show [SOURCE] [--reference MODEL] [--lang L] [--config .cdec] \
 #### Snapshotting from the code
 
 ```
-cdec check --automatic-exceptions reference [--source DIR] [--reference MODEL] [--config .cdec]
+cdec check --automatic-exceptions reference [--source DIR] [--reference MODEL] [--config .cdec] [-m TEXT]
 ```
 
-Re-parses the source and writes the model. `cdec init` takes the first snapshot for you, so
+Re-parses the source and writes the model. The command does not need a
+`reference-architecture` rule: the reference is also the baseline of every `scope: diff`
+rule. The project history records the snapshot as a checkpoint, with the text of `-m` as
+the note. An open goal closes. `cdec init` takes the first snapshot for you, so
 most projects only run this when a reviewer has approved an architectural change — and the
 regenerated `reference.xmi` belongs in the same pull request as the code that caused it,
 because that is what makes the delta reviewable.
@@ -694,6 +702,88 @@ views, not your code.
 
 > Port 8000 is reserved by Windows `http.sys` on some machines; 8765 is the default for
 > that reason. Change with `--port`.
+
+`cdec ui` needs no argument. The home page offers four ways to start:
+
+| Choice | Result |
+|---|---|
+| **This folder** | The folder that the command ran in. For a cdec project, the viewer reads the source folder and the language from `rules.yaml`. |
+| **Open a folder** | A path that you type, or choose with **Browse…**. The viewer detects the language. |
+| **Recent folders** | The folders that the viewer opened before, each with its saved views. |
+| **Open a model file** | A `.xmi` or `.json` model file, with no source code. A second file gives a comparison. |
+
+The viewer has five pages for an open folder:
+
+| Page | Purpose |
+|---|---|
+| **Project** | The home of the project: the codebase, the next step of the journey (greenfield or brownfield), and one card for each task. For a folder with no `.cdec/` folder, it creates the project config. A folder opens on this page. |
+| **Diagrams** | The class, package, activity and sequence diagrams. **Show** chooses the model. **compared with** adds the diff colours of the change from a second model. In **Edit** mode, **Set as goal…** writes the edited diagram to `.cdec/reference.xmi` and records a goal. |
+| **Rules** | What the project demands, in three tabs. **Rules**: each entry of `rules.yaml`, with its severity, **Change…** and **Remove**. **Constraints in the code**: each constraint tag, with the class or the method that has it. **Locks**: each locked element with the state of its digest. |
+| **Checks** | `cdec check`, in two tabs. **Run cdec check**: the options of the CLI (**Fail on**, the rule files, the baseline, the bypass of the locks), the command line, the verdict and the exit code, the issues to filter and group, and the change since the run before. Each issue has **Diagram**, **Editor** (the file at the line) and **Accept…**. **Text output** is the text of the CLI; **Download JSON** is `--format json`. **Accepted issues**: the `exceptions:` list, with **Withdraw** and the removal of stale entries. |
+| **Timeline** | The entries of `.cdec/history/` in a row, oldest first, then **The code of today**. Each step shows its model on the diagram, the rules that were on, and what changed since the step before. **Play** shows the steps in order. The left and right arrow keys move along the row. |
+
+A page names a model in one of five ways: the code of today, the target (the reference
+model), a step of the timeline, a git revision, or a model file (`.xmi` or `.json`). The
+**Diagrams** page shows one model, or the change between two. The **Checks** page runs the
+rules on one model against another.
+
+The **Checks** page and the CLI call one library function (`lint.pipeline.run_check`),
+so the page and `cdec check` give the same JSON report and the same exit code. A test
+compares the two. The page writes nothing: `--automatic-exceptions`, `--json-out` and
+`--log-out` stay on the command line. Only the run of the code against the reference
+accepts an issue. With a model in **Check**, the rules that read source code
+(`tag-conformance`, `implementation-locks`, `reference-architecture`) do not run, the
+page says so, and there is no command line for the run.
+
+A rule that the viewer turns on, changes or removes is an entry of the timeline, of the
+kind `rules`. A rule that you change by hand in `rules.yaml` shows in the next entry.
+
+Each task of the CLI has a place in the viewer:
+
+| Task | Where | The command it runs |
+|---|---|---|
+| Open a project | Home: **This folder**, **Open a folder** (with **Browse…**), **Recent folders** | `cdec ui parse PATH` |
+| Open a model file, or compare two model files | Home: **Open a model file** | `cdec diff-xmi` |
+| Set up a project | **Project** | `cdec init` |
+| Fold the files of an older cdec into `rules.yaml` | **Project** | `cdec init --migrate` |
+| Add a rule | **Add a rule** wizard: choose, fill in a form, try it on the code of today, turn it on | an edit of `rules:`, then `cdec exceptions allow` for the issues that you accept |
+| Change or remove a rule, change a severity | **Rules** | an edit of `rules:` |
+| See the constraint tags of the code | **Rules**, **Constraints in the code** | none: the tags are in the model |
+| Put a constraint tag on a class or a method | **Put a constraint on a class** wizard | none: it gives the line to paste, then parses the code again to confirm the tag |
+| Copy the shim file | the tag wizard | `cdec update-assets --no-agents` |
+| Record new locks, accept a change to locked code | **Rules**, **Locks** | `cdec check -A locks`, `cdec check -A locks --force --target …` |
+| Run the check, see why it fails | **Checks**, **▶ Run cdec check** | `cdec check`, `--fail-on`, `--rules-file`, `--bypass-locks` |
+| Check the code against a snapshot or a git revision | **Checks**, **More options**, **against** | `cdec check --reference FILE`, `cdec check --base-ref REV` |
+| Check a target model or a snapshot with the rules | **Checks**, **More options**, **Check** | none: only the viewer does this |
+| Accept one issue, or all open issues | **Checks** | `cdec exceptions allow`, `cdec check -A rules` |
+| Withdraw an accepted issue, remove the stale ones | **Checks**, **Accepted issues** | `cdec exceptions remove`, `cdec exceptions prune` |
+| Plan a change | **Diagrams**, **Edit**, **Set as goal…** | `cdec reference set` |
+| Show a model, or compare two models | **Diagrams**, **Show** and **compared with** | `cdec diff`, `cdec diff-vs-xmi`, `cdec diff-xmi`, `cdec reference show` |
+| See the code against the goal | **Timeline**, **The code of today** | `cdec reference show` |
+| See the rules that were on at each step | **Timeline** | `cdec history` |
+| Record progress | **Timeline**, **Record a checkpoint…** | `cdec history add` |
+| Accept the code as the reference | **Accept the code as the reference** wizard | `cdec check -A reference` |
+| Run the check in CI, set up a coding agent | **Run the check automatically** wizard | writes `cdec-ci.sh` / `cdec-ci.bat`; shows the CI, pre-commit, hcm and MCP texts |
+
+The wizards:
+
+- **Add a rule** / **Change a rule**. A form with one field for each option of the rule.
+  A name field suggests the classes and the packages of the project. **Edit as text**
+  shows the YAML of the entry. **Try it** runs the draft on the code of today and writes
+  nothing. The last step adds the rule, and can accept the reported issues.
+- **Put a constraint on a class**. Choose a class or a method, then a tag. The wizard
+  gives the import and the tag in the syntax of the language, opens the file in the
+  editor, and copies the shim file. **Check it** parses the code again: the wizard
+  continues only when cdec sees the tag. The last step turns on the rule that enforces
+  the tag.
+- **Accept the code as the reference**. It lists the classes that join, leave and change
+  in the reference, then asks for a name and a reason. An open goal closes.
+- **Run the check automatically**. The texts for GitHub Actions, GitLab CI and pre-commit,
+  the two CI scripts, and the setup of the agent bundle and of the MCP server.
+
+The pages and the wizards that write into `.cdec/` accept requests from this machine only.
+The folder browser has the same limit. They change the `rules:` list only when the rules
+are in `rules.yaml`: the tool does not write into `.cdec/rules/`.
 
 #### `cdec ui parse`
 
@@ -731,6 +821,28 @@ re-propose, discuss, repeat. If a `cdec ui` instance is already listening on the
 is reused; otherwise a server is started (blocking) with the proposal pre-loaded.
 
 Once the design is agreed, freeze it with `cdec reference set MODEL`.
+
+### 2.7 The project history (`cdec history`)
+
+`.cdec/history/` records how the architecture got to where it is. Each entry is a model
+and a note. See [§3.6](#36-history) for the files.
+
+```
+cdec history [--config .cdec]
+cdec history add TITLE [-m TEXT] [--source DIR] [--config .cdec]
+```
+
+`cdec history` lists the entries, oldest first. `cdec history add` records a checkpoint:
+the model of the code as it is now. A checkpoint changes no rule and does not change the
+reference. While a goal is open, the checkpoint records the distance to the goal.
+
+Three other commands write an entry:
+
+| Command | Entry |
+|---|---|
+| `cdec init` | `start` |
+| `cdec reference set MODEL` | `goal` |
+| `cdec check --automatic-exceptions reference` | `checkpoint`. The model became the reference, so an open goal closes. |
 
 ---
 
@@ -914,7 +1026,34 @@ cdec reference set target.json                 # declare what it SHOULD BECOME
 Commit the regenerated file in the same pull request that makes the architectural change,
 so reviewers see the model delta in the diff.
 
-### 3.6 `.gitignore` & `cache/`
+### 3.6 `history/`
+
+The recorded journey. The tool writes it. Commit it.
+
+```
+.cdec/history/20261115-143210-goal.yaml    # title, note, author, commit, rules, statistics
+.cdec/history/20261115-143210-goal.xmi     # the model at that moment
+```
+
+A file name starts with the UTC time of the entry, so the names sort in the order of the
+events. One entry is two files and no entry changes later, so two branches that each
+record an entry merge with no conflict.
+
+| Key of the note file | Meaning |
+|---|---|
+| `kind` | `start`, `goal` or `checkpoint`. |
+| `title`, `note` | The name of the entry and the reason for it. |
+| `created`, `author`, `commit` | UTC time, the user, and the short hash of HEAD. A `+` after the hash shows uncommitted changes. |
+| `journey` | `greenfield` or `brownfield`. Only the `start` entry has it. |
+| `reference` | `true` when the model became `.cdec/reference.xmi`. |
+| `stats` | The number of classes, packages, exceptions and locks. |
+| `rules` | The rules at that moment: `id`, `type`, `severity`. |
+| `goal`, `distance` | On a checkpoint that was recorded while a goal was open: the goal, and the classes `to_build`, `to_change` and `unplanned`. |
+
+The open goal is the last entry with `reference: true`, when its kind is `goal`. To turn
+the history off, add `history: false` to the settings of `rules.yaml`.
+
+### 3.7 `.gitignore` & `cache/`
 
 `.cdec/.gitignore` ignores `cache/`, which holds transient parse artefacts. Everything else
 in `.cdec/` should be committed.

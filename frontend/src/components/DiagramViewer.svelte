@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import {
     api,
     type Change,
     type DiagramChange,
     type DiagramListing,
+    type ProjectDraft,
     type WorkspaceView,
     type WorkspaceViewState,
     type XmiInfo,
@@ -37,15 +38,20 @@
   import EdgeFocusModal from "./diagram/EdgeFocusModal.svelte";
   import DiagramToolbar from "./DiagramToolbar.svelte";
   import ToolbarMenu from "./ToolbarMenu.svelte";
+  import Modal from "./editor/Modal.svelte";
+  import { projectChanged } from "./journey/wizards.svelte";
 
   // `view` is the workspace view on the canvas. Its state is on the canvas
   // already (App applies it before this mounts); this component saves it, and
   // keeps `view.state` current so a remount (Browse → Diff → Browse) starts on
   // the diagram the user left.
+  // `startInEdit`: the guide sends the user here to draw a goal, so the
+  // diagram opens as an editable copy.
   let {
     xmi,
     view = $bindable(null),
-  }: { xmi: XmiInfo; view?: WorkspaceView | null } = $props();
+    startInEdit = false,
+  }: { xmi: XmiInfo; view?: WorkspaceView | null; startInEdit?: boolean } = $props();
 
   let busy = $state(false);
   let status = $state<{ kind: "ok" | "error"; msg: string } | null>(null);
@@ -73,6 +79,8 @@
       const res = await fetch(`/api/xmi/${xmi.id}/source`);
       if (!res.ok) throw new Error(`fetch source: ${res.status}`);
       const draft = await api.editFromXmi(await res.blob(), `${xmi.id}.xmi`);
+      // The model before the first edit: the goal dialog counts the changes.
+      original = structuredClone(draft);
       loadFromJson(draft, `${xmi.id}.xmi`);
       setMode("edit");
       // Keep `visibleClassIds`: the editor graph uses the same stable ids, so
@@ -126,17 +134,39 @@
       else setBaseline(await api.referenceModel(xmi.project_id));
     });
 
+  onMount(() => {
+    if (startInEdit && editorState.mode !== "edit") void editCurrent();
+  });
+
   // View mode saves the parsed diagram; edit mode saves the draft. Either way
-  // it overwrites the file the `reference-architecture` rule gates against.
+  // it overwrites the file the `reference-architecture` rule gates against,
+  // and the project history records the model: an edited diagram is a goal
+  // (the code must reach it), a parsed diagram is a checkpoint (the code as it
+  // is). The dialog asks for the name and the reason.
+  let recordForm = $state<{ title: string; note: string } | null>(null);
+  let original: ProjectDraft | null = null;
+  // What the edited diagram changes, for the review in the goal dialog.
+  let planned = $state<{ added: number; removed: number; changed: number } | null>(null);
+
+  function openRecordForm() {
+    recordForm = { title: "", note: "" };
+    planned = null;
+    if (editorState.mode !== "edit" || !original) return;
+    api
+      .editDiffGraph(original, $state.snapshot(editorState.project) as ProjectDraft)
+      .then((graph) => {
+        const of = (status: string) => graph.nodes.filter((n) => n.status === status).length;
+        planned = { added: of("added"), removed: of("removed"), changed: of("changed") };
+      })
+      .catch(() => {});
+  }
+  const recordKind = $derived<"goal" | "checkpoint">(
+    editorState.mode === "edit" ? "goal" : "checkpoint",
+  );
+
   function setAsReference() {
-    const what = editorState.mode === "edit" ? "the edited diagram" : "this diagram";
-    if (
-      !confirm(
-        `Overwrite .cdec/reference.xmi with ${what}? ` +
-          "cdec check compares the code against this file.",
-      )
-    )
-      return;
+    const record = { kind: recordKind, title: recordForm?.title.trim() ?? "", note: recordForm?.note.trim() ?? "" };
+    recordForm = null;
     void run(async () => {
       let blob: Blob;
       if (editorState.mode === "edit") {
@@ -146,7 +176,10 @@
         if (!res.ok) throw new Error(`fetch source: ${res.status}`);
         blob = await res.blob();
       }
-      const saved = await api.setReference(xmi.project_id, blob);
+      const saved = await api.setReference(xmi.project_id, blob, record);
+      // The draft is in the reference file now, so it is not an unsaved edit.
+      editorState.dirty = false;
+      projectChanged(); // the list of models and the timeline have a new entry
       report("ok", `Saved as reference: ${saved.path}`);
     });
   }
@@ -293,6 +326,58 @@
 <LayerDependenciesModal projectId={xmi.project_id} />
 <LayerClassesModal {xmi} />
 <EdgeFocusModal />
+<Modal
+  open={recordForm !== null}
+  title={recordKind === "goal" ? "Set the edited diagram as the goal" : "Set this diagram as the reference"}
+  onclose={() => (recordForm = null)}
+>
+  {#if recordForm}
+    <form
+      class="record-form"
+      onsubmit={(e) => {
+        e.preventDefault();
+        setAsReference();
+      }}
+    >
+      <p>
+        {recordKind === "goal"
+          ? "This overwrites .cdec/reference.xmi with the edited diagram. The reference is then a target: cdec check compares the code against it, and the history shows the distance to it."
+          : "This overwrites .cdec/reference.xmi with the code as it is now. An open goal closes."}
+      </p>
+      {#if recordKind === "goal" && planned}
+        <p class="planned">
+          {#if planned.added + planned.removed + planned.changed === 0}
+            The diagram has no change. The goal is then the code as it is.
+          {:else}
+            This goal has {planned.added} new {planned.added === 1 ? "class" : "classes"},
+            removes {planned.removed}, and changes {planned.changed}.
+          {/if}
+        </p>
+      {/if}
+      <label>
+        {recordKind === "goal" ? "Name of the goal" : "Name of this checkpoint"}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          type="text"
+          autofocus
+          bind:value={recordForm.title}
+          placeholder={recordKind === "goal" ? "Split billing from orders" : "After the billing split"}
+        />
+      </label>
+      <label>
+        Why
+        <textarea rows="3" bind:value={recordForm.note} placeholder="The history records the reason."
+        ></textarea>
+      </label>
+      <div class="record-actions">
+        <button type="button" onclick={() => (recordForm = null)}>Cancel</button>
+        <button type="submit" class="primary">
+          {recordKind === "goal" ? "Set as goal" : "Set as reference"}
+        </button>
+      </div>
+    </form>
+  {/if}
+</Modal>
 <header class="editor-bar">
   <div class="mode" role="group" aria-label="Mode">
     <button
@@ -318,6 +403,13 @@
     {#if editorState.mode === "edit"}
       <button
         class="primary"
+        onclick={openRecordForm}
+        disabled={busy}
+        title="Make the edited diagram the target that cdec check compares the code against"
+      >
+        Set as goal…
+      </button>
+      <button
         onclick={saveXmi}
         disabled={busy}
         title="Download the edited diagram as XMI"
@@ -348,10 +440,14 @@
         </button>
         <span class="menu-note">Show live diff colours against .cdec/reference.xmi while you edit.</span>
       {/if}
-      <button onclick={setAsReference} disabled={busy}>
-        {editorState.mode === "edit" ? "Set edited diagram as reference…" : "Set as reference…"}
+      <button onclick={openRecordForm} disabled={busy}>
+        {editorState.mode === "edit" ? "Set as goal…" : "Set as reference…"}
       </button>
-      <span class="menu-note">Overwrite .cdec/reference.xmi, the model that cdec check compares the code against.</span>
+      <span class="menu-note">
+        {editorState.mode === "edit"
+          ? "Make the edited diagram the reference: the target that cdec check compares the code against."
+          : "Overwrite .cdec/reference.xmi with the code as it is. cdec check compares the code against it."}
+      </span>
     </ToolbarMenu>
   </div>
 </header>
@@ -538,6 +634,49 @@
   }
   .editor-fullwidth {
     grid-column: 1 / -1;
+  }
+  .record-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    font-size: 0.875rem;
+  }
+  .record-form p {
+    margin: 0;
+    color: var(--muted);
+  }
+  .record-form p.planned {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .record-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .record-form input,
+  .record-form textarea {
+    font: inherit;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .record-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  .record-actions button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.3rem 0.75rem;
+    cursor: pointer;
+  }
+  .record-actions button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
   }
   .layout {
     flex: 1;

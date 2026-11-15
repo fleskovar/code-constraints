@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from code_constraints.core.model import Project
 from code_constraints.lint.config import (
     LoadedRules,
     ProjectConfig,
@@ -24,6 +25,7 @@ from code_constraints.lint.config import (
     load_rules,
 )
 from code_constraints.lint.pipeline import PipelineError, parse_source, resolve_baseline
+from code_constraints.lint.rules.base import Rule
 from code_constraints.waivers.model import Issue
 from code_constraints.waivers.store import WaiverStore, ledger_paths, load_waivers
 
@@ -38,6 +40,13 @@ class CollectOptions:
     reference: Path | None = None
     base_ref: str | None = None
     repo: Path = Path(".")
+    # Rules to run in place of the ones in rules.yaml. A draft rule is tried
+    # this way before it is written, so its keys match the later real run.
+    rules: list[Rule] | None = None
+    # A model to check in place of the source tree: a target model, or a
+    # snapshot. The rules that read the source do not run on it; they land in
+    # `skipped`, like every rule that cannot run.
+    model: Project | None = None
 
 
 @dataclass
@@ -78,7 +87,7 @@ def collect_issues(config_dir: Path, options: CollectOptions | None = None) -> C
 
     out = Collected(store=store, ledger_path=rules_file, config=cfg)
 
-    head_proj = parse_source(source_path, cfg.language)
+    head_proj = opts.model if opts.model is not None else parse_source(source_path, cfg.language)
     annotated, has_diff, base_proj = resolve_baseline(
         head_proj=head_proj,
         lang=cfg.language,
@@ -94,7 +103,9 @@ def collect_issues(config_dir: Path, options: CollectOptions | None = None) -> C
     # cycle while `waivers` is still initialising.
     from code_constraints.lint.engine import SourceContext, run_checks
 
-    loaded: LoadedRules = load_rules(config_dir)
+    loaded: LoadedRules = (
+        LoadedRules(rules=list(opts.rules)) if opts.rules is not None else load_rules(config_dir)
+    )
     # Run unfiltered (`baseline=None`) so accepted issues are still visible to
     # the review workflow rather than silently dropped.
     report = run_checks(
@@ -104,7 +115,7 @@ def collect_issues(config_dir: Path, options: CollectOptions | None = None) -> C
         baseline=None,
         baseline_project=base_proj,
         source_context=SourceContext(
-            source=source_path,
+            source=None if opts.model is not None else source_path,
             language=cfg.language,
             config_dir=config_dir,
             reference_path=opts.reference or cfg.reference_path,

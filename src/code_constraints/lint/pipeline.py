@@ -48,6 +48,20 @@ def parse_source(path: Path, lang: str) -> Project:
     return parse_project(path)
 
 
+def snapshot_reference(source: Path, lang: str, reference_path: Path) -> Project:
+    """Write the model of the current source to the reference file.
+
+    The reference is the baseline of every `scope: diff` rule, so a project
+    re-snapshots it with or without a `reference-architecture` rule.
+    """
+    from code_constraints.core.model_io import save_model
+
+    project = parse_source(source, lang)
+    reference_path.parent.mkdir(parents=True, exist_ok=True)
+    save_model(project, reference_path)
+    return project
+
+
 def checkout_revision(repo: Any, ref: str, dest: Path) -> Path:
     """Copy the tree at `ref` into `dest` (avoids touching the working tree)."""
     dest.mkdir(parents=True, exist_ok=True)
@@ -106,3 +120,54 @@ def resolve_baseline(
         return annotated, True, base_proj
 
     return head_proj, False, None
+
+
+def run_check(
+    head_proj: Project,
+    rules: Any,
+    cfg: Any,
+    *,
+    source: Path | None,
+    language: str,
+    reference: Path | None = None,
+    base_ref: str | None = None,
+    repo: Path = Path("."),
+    filtered: bool = True,
+    bypass_locks: bool = False,
+    bypass_reason: str = "",
+) -> Any:
+    """The back half of `cdec check`: resolve the baseline and run the rules.
+
+    `head_proj` is the parsed source, or a model in its place. `cfg` is the
+    `ProjectConfig`. `source` is None for a model: the rules that read source
+    code then skip. `filtered` applies the exceptions; the grandfathering pass
+    of `--automatic-exceptions rules` needs the raw set. The CLI and the web app
+    both call this, so the two reports are one report.
+    """
+    from code_constraints.lint.baseline import load_baseline
+    from code_constraints.lint.engine import SourceContext, run_checks
+
+    annotated, has_diff, base_proj = resolve_baseline(
+        head_proj=head_proj,
+        lang=language,
+        config_dir=cfg.config_dir,
+        explicit_reference=reference,
+        explicit_base_ref=base_ref,
+        repo_path=repo,
+        default_reference=cfg.reference,
+    )
+    return run_checks(
+        annotated,
+        rules,
+        has_diff=has_diff,
+        baseline=load_baseline(cfg.config_dir) if filtered else None,
+        baseline_project=base_proj,
+        source_context=SourceContext(
+            source=source,
+            language=language,
+            config_dir=cfg.config_dir,
+            reference_path=reference or cfg.reference_path,
+        ),
+        bypass_locks=bypass_locks,
+        bypass_reason=bypass_reason,
+    )

@@ -368,8 +368,11 @@ teaches; a rule that just says "violation" breeds resentment.
 
 ### 3.4 Adopting on an existing codebase
 
-Real codebases already violate the rules you want. Three escape hatches, in order of
-preference:
+Real codebases already violate the rules you want. The **Rules** page of the viewer
+(`cdec ui`, open the folder, then **Rules**, **Add a rule…**) is the short way: select a
+rule, select **Try it on the code of today**, and read what the rule reports. **Turn on and accept** adds the rule
+and accepts those issues in one step. From the command line there are three escape
+hatches, in order of preference:
 
 **1. Baseline the existing violations** — turn on the rule, grandfather today's failures,
 and prevent *new* ones:
@@ -1073,12 +1076,38 @@ From here on `cdec check` measures the code against the agreed target — every
 directly. Because the target contains classes that do not exist yet, `cdec reference show`
 renders them green: a live build-out checklist.
 
-### 8.5 Editing in the browser instead
+### 8.5 Record the journey
+
+Give the goal a name and a reason when you lock it. Record a checkpoint after each piece
+of work:
+
+```bash
+cdec reference set target.json --title "Split billing from orders" -m "Orders must not know tax rules."
+cdec history add "Receipt moved to billing"
+cdec history
+```
+
+```
+2026-11-15  start       Start of the journey  (16 classes, 0 rules, 0 exceptions)
+2026-11-15  goal        Split billing from orders  (17 classes, 2 rules, 0 exceptions)
+            Orders must not know tax rules.
+2026-11-16  checkpoint  Receipt moved to billing  (16 classes, 2 rules, 0 exceptions)
+            to the goal: 1 to build, 0 to change, 0 unplanned
+```
+
+Each entry keeps the model of that moment in `.cdec/history/`. The **Timeline** page of the
+viewer shows the entries on the diagram and plays them in order. When the code reaches the
+goal, run `cdec check --automatic-exceptions reference -m "Goal reached"`: the reference
+becomes a snapshot of the code, and the goal closes.
+
+### 8.6 Editing in the browser instead
 
 The viewer has a full editor mode: double-click a class to edit it, hover for quick
 "+ attribute" / "+ method", press Delete to remove. A two-way JSON panel sits beside the
 canvas, so you can type JSON or drag boxes and the other side follows. Load a baseline and
-turn on **Compare** to get live diff styling as you edit.
+turn on **Compare** to get live diff styling as you edit. **Architecture › Set as goal…**
+is `cdec reference set` for the edited diagram: it asks for the name and the reason, and
+records the goal in the history.
 
 ---
 

@@ -125,8 +125,12 @@ Do this phase on the work branch, after the approval.
 1. Lock the model as the target architecture:
 
    ```bash
-   cdec reference set .cdec/proposals/<change>.json
+   cdec reference set .cdec/proposals/<change>.json --title "<change>" -m "<why>"
    ```
+
+   The project history (`.cdec/history/`) records the model as a goal, with the title and
+   the reason. After each implementation task, run `cdec history add "<what changed>"`. The
+   checkpoint records how far the code is from the goal.
 
 2. Add the approved rules to `.cdec/rules.yaml`. See the `cdec-guardrails` skill.
 3. Run `cdec check`. The rules that compare the code with the reference now fail on each

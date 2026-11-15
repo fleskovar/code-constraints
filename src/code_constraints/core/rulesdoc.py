@@ -131,6 +131,184 @@ def write_sections(path: Path, sections: dict[str, Any]) -> None:
     path.write_text(out, encoding="utf-8")
 
 
+# ---------- the hand-written `rules:` list ----------
+#
+# The web app adds a rule and changes a severity. Both edits touch the lines of
+# one list entry and keep every other byte, comments included. Each edit is
+# checked after the write: the file must parse to exactly the expected list, or
+# the original text goes back and the caller gets an error.
+
+class _BlockDumper(yaml.SafeDumper):
+    """Writes a multi-line string as a `|` block, so a `message` stays readable."""
+
+
+_BlockDumper.add_representer(
+    str,
+    lambda dumper, data: dumper.represent_scalar(
+        "tag:yaml.org,2002:str", data, style="|" if "\n" in data else None
+    ),
+)
+
+_LIST_ITEM_RE = re.compile(r"^(\s*)-\s")
+
+
+def render_rule(entry: dict[str, Any], indent: str = "  ") -> str:
+    """One rule entry as the YAML text of a list item."""
+    text = yaml.dump(
+        [entry], Dumper=_BlockDumper, sort_keys=False, default_flow_style=False,
+        allow_unicode=True, width=100000,
+    )
+    return "".join(indent + line for line in text.splitlines(keepends=True))
+
+
+def append_rule(path: Path, entry: dict[str, Any]) -> None:
+    """Add `entry` at the end of the `rules:` list of `rules.yaml`."""
+    before = load_document(path).get("rules") or []
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.is_file() else []
+    span = _rules_span(lines)
+    if span is None:
+        # No `rules:` key. Put one above the managed block.
+        at = next(
+            (start for key, start, _ in _top_level_spans(lines) if key in MANAGED_KEYS),
+            len(lines),
+        )
+        lines[at:at] = ["rules:\n", render_rule(entry), "\n"]
+    else:
+        key_line, last = span
+        if last == key_line:
+            # `rules: []` or a bare `rules:`. The list starts here.
+            lines[key_line] = "rules:\n"
+            added = [render_rule(entry)]
+        else:
+            match = _LIST_ITEM_RE.match(lines[key_line + 1])
+            added = ["\n", render_rule(entry, match.group(1) if match else "  ")]
+        if not lines[last].endswith("\n"):
+            lines[last] += "\n"
+        lines[last + 1:last + 1] = added
+    _commit_rules_edit(path, lines, [*before, entry])
+
+
+def set_rule_severity(path: Path, rule_id: str, severity: str) -> None:
+    """Change the `severity:` of one entry of the `rules:` list."""
+    if severity not in ("error", "warning", "off"):
+        raise RulesFileError(f"severity must be error, warning or off, not {severity!r}")
+    before = load_document(path).get("rules") or []
+    expected = [
+        {**r, "severity": severity} if isinstance(r, dict) and r.get("id") == rule_id else r
+        for r in before
+    ]
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    start, end, item_indent = _entry_span(path, lines, rule_id)
+    key_indent = item_indent + "  "
+    # `off` is quoted: YAML 1.1 reads a bare `off` as the boolean False.
+    new_line = f"{key_indent}severity: " + ('"off"' if severity == "off" else severity)
+    severity_re = re.compile(rf"^{re.escape(key_indent)}severity:[^#]*?(\s+#.*)?$")
+    for i in range(start + 1, end):
+        match = severity_re.match(lines[i].rstrip("\n"))
+        if match:
+            lines[i] = new_line + (match.group(1) or "") + "\n"
+            break
+    else:
+        if not lines[start].endswith("\n"):
+            lines[start] += "\n"
+        lines.insert(start + 1, new_line + "\n")
+    _commit_rules_edit(path, lines, expected)
+
+
+def replace_rule(path: Path, rule_id: str, entry: dict[str, Any]) -> None:
+    """Write `entry` in place of the entry `rule_id`. A comment inside the old
+    entry goes with it; every line outside the entry stays."""
+    before = load_document(path).get("rules") or []
+    expected = [entry if isinstance(r, dict) and r.get("id") == rule_id else r for r in before]
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    start, end, item_indent = _entry_span(path, lines, rule_id)
+    lines[start:end] = [render_rule(entry, item_indent)]
+    _commit_rules_edit(path, lines, expected)
+
+
+def remove_rule(path: Path, rule_id: str) -> None:
+    """Delete the entry `rule_id` from the `rules:` list."""
+    before = load_document(path).get("rules") or []
+    expected = [r for r in before if not (isinstance(r, dict) and r.get("id") == rule_id)]
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    start, end, _indent = _entry_span(path, lines, rule_id)
+    # The blank line after the entry goes with it.
+    if end < len(lines) and not lines[end].strip():
+        end += 1
+    del lines[start:end]
+    if not expected:
+        span = _rules_span(lines)
+        assert span is not None
+        lines[span[0]] = "rules: []\n"
+    _commit_rules_edit(path, lines, expected)
+
+
+def _entry_span(path: Path, lines: list[str], rule_id: str) -> tuple[int, int, str]:
+    """(first line, line after the last line, indent of the `-`) of one entry.
+
+    The entry must start with `- id: <rule_id>`. Blank lines and comments after
+    its last key are not part of it: a comment above the next entry belongs to
+    that entry.
+    """
+    span = _rules_span(lines)
+    id_re = re.compile(rf"^(\s*)-\s+id:\s*[\'\"]?{re.escape(rule_id)}[\'\"]?\s*(#.*)?$")
+    for start in range(span[0] + 1, span[1] + 1) if span else ():
+        match = id_re.match(lines[start].rstrip("\n"))
+        if match is None:
+            continue
+        indent = match.group(1)
+        end = next(
+            (i for i in range(start + 1, span[1] + 1) if lines[i].startswith(indent + "- ")),  # type: ignore[index]
+            span[1] + 1,  # type: ignore[index]
+        )
+        while end - 1 > start and (
+            not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")
+        ):
+            end -= 1
+        return start, end, indent
+    raise RulesFileError(
+        f"{path}: no entry that starts with `- id: {rule_id}`. Edit the file by hand."
+    )
+
+
+def _rules_span(lines: list[str]) -> tuple[int, int] | None:
+    """(index of the `rules:` line, index of the last line of its list).
+
+    The span of a top-level key runs to the next key, so it includes trailing
+    blank lines and comments. The list ends at its last line that is neither.
+    """
+    for key, start, end in _top_level_spans(lines):
+        if key != "rules":
+            continue
+        key_line = next(i for i in range(start, end) if _TOP_KEY_RE.match(lines[i]))
+        last = key_line
+        for i in range(key_line + 1, end):
+            stripped = lines[i].strip()
+            if stripped and not stripped.startswith("#") and lines[i][:1] in (" ", "\t", "-"):
+                last = i
+        return key_line, last
+    return None
+
+
+def _commit_rules_edit(path: Path, lines: list[str], expected: list[Any]) -> None:
+    original = path.read_text(encoding="utf-8") if path.is_file() else None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(lines), encoding="utf-8")
+    try:
+        ok = (load_document(path).get("rules") or []) == expected
+    except RulesFileError:
+        ok = False
+    if not ok:
+        if original is None:
+            path.unlink()
+        else:
+            path.write_text(original, encoding="utf-8")
+        raise RulesFileError(
+            f"{path}: the `rules:` list has a layout that cdec cannot edit safely. "
+            f"The file is unchanged. Edit it by hand."
+        )
+
+
 # ---------- internals ----------
 
 def _split(text: str) -> tuple[str, dict[str, Any]]:
